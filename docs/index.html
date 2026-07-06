@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio BI — Scorecard</title>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --card: #ffffff;
+    --ink: #1f2a24;
+    --muted: #6b7a70;
+    --border: #e4e0d6;
+    --support: #2f7a4f;
+    --support-bg: #e8f3ec;
+    --caution: #b5502a;
+    --caution-bg: #fbeee6;
+    --neutral: #8a8478;
+    --neutral-bg: #f1efe9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 32px 16px 64px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  header { margin-bottom: 28px; }
+  header h1 { font-size: 22px; margin: 0 0 4px; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  .asset-line {
+    display: flex; justify-content: space-between; align-items: baseline;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;
+  }
+  .asset-line .name { font-weight: 600; font-size: 15px; }
+  .asset-line .nav { color: var(--muted); font-size: 14px; }
+
+  .pillar {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
+  }
+  .pillar-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px;
+  }
+  .pillar-head h2 { font-size: 15px; margin: 0; }
+  .badge {
+    font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  }
+  .badge.support { color: var(--support); background: var(--support-bg); }
+  .badge.caution { color: var(--caution); background: var(--caution-bg); }
+  .badge.neutral { color: var(--neutral); background: var(--neutral-bg); }
+
+  .signal {
+    display: flex; gap: 10px; padding: 8px 0;
+    border-top: 1px solid var(--border);
+  }
+  .signal:first-child { border-top: none; }
+  .mark {
+    flex: 0 0 20px; height: 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; margin-top: 1px;
+  }
+  .mark.supportive { color: var(--support); background: var(--support-bg); }
+  .mark.caution { color: var(--caution); background: var(--caution-bg); }
+  .mark.neutral { color: var(--neutral); background: var(--neutral-bg); }
+  .signal-body .name { font-weight: 600; font-size: 13.5px; }
+  .signal-body .reading { color: var(--muted); font-size: 13px; margin-left: 6px; }
+  .signal-body .why { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+  .summary {
+    background: var(--card); border: 1px solid var(--border);
+    border-left: 4px solid var(--neutral);
+    border-radius: 12px; padding: 16px 20px; font-size: 13.5px; color: var(--ink);
+    line-height: 1.5;
+  }
+  .summary.support-lean { border-left-color: var(--support); }
+  .summary.caution-lean { border-left-color: var(--caution); }
+
+  .disclaimer {
+    margin-top: 24px; font-size: 11.5px; color: var(--muted); text-align: center;
+  }
+  #error {
+    display: none; background: var(--caution-bg); color: var(--caution);
+    border-radius: 12px; padding: 16px 20px; font-size: 13.5px; line-height: 1.5;
+  }
+  #error code {
+    background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 4px;
+  }
+  #loading {
+    text-align: center; color: var(--muted); font-size: 13.5px; padding: 40px 0;
+  }
+
+  .overview {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 20px;
+  }
+  .overview-top {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  }
+  .overview .name { font-weight: 600; font-size: 15px; }
+  .overview .nav { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .overview .verdict {
+    font-size: 13.5px; margin-top: 10px; color: var(--ink); line-height: 1.4;
+  }
+  .refresh-row {
+    display: flex; align-items: center; gap: 10px; margin-top: 12px;
+  }
+  .updated-at { font-size: 11.5px; color: var(--muted); }
+  #refresh-btn {
+    font-size: 12.5px; font-weight: 600; color: var(--ink);
+    background: var(--neutral-bg); border: 1px solid var(--border);
+    border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  }
+  #refresh-btn:hover { background: var(--border); }
+  #refresh-btn:disabled { opacity: 0.6; cursor: default; }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted);
+    margin-bottom: 16px; padding: 0 4px;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend .mark { flex: 0 0 16px; height: 16px; font-size: 10px; margin-top: 0; }
+
+  .private {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
+  }
+  .private-head h2 { font-size: 15px; margin: 0 0 4px; }
+  .private-note {
+    font-size: 12px; color: var(--muted); margin-bottom: 14px; line-height: 1.4;
+  }
+  .private-form {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 6px;
+  }
+  .private-form label {
+    display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 4px;
+  }
+  .private-form input {
+    width: 100%; font-size: 13.5px; padding: 7px 9px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--bg); color: var(--ink); box-sizing: border-box;
+  }
+  .private-form input:focus { outline: 2px solid var(--support); outline-offset: 1px; }
+  .remember-row {
+    display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted);
+    margin: 10px 0 4px;
+  }
+  #private-results { margin-top: 12px; }
+  #private-results .signal:first-child { border-top: 1px solid var(--border); }
+  #private-placeholder {
+    font-size: 12.5px; color: var(--muted); font-style: italic; margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Portfolio BI</h1>
+    <p>Scorecard trasparente — descrive lo stato, non prescrive decisioni</p>
+  </header>
+
+  <div id="loading">Caricamento scorecard…</div>
+  <div id="error"></div>
+  <div id="content"></div>
+
+  <p class="disclaimer">Uso personale e informativo. Non è consulenza finanziaria.</p>
+</div>
+
+<script>
+const markSymbol = { supportive: "+", caution: "!", neutral: "·" };
+const markLabel = { supportive: "favorevole", caution: "attenzione", neutral: "neutro" };
+const badgeClass = (score) => score >= 0.5 ? "support" : score <= -0.5 ? "caution" : "neutral";
+const verdictText = (total) =>
+  total >= 1 ? "Il quadro complessivo è favorevole." :
+  total <= -1 ? "Il quadro complessivo invita a cautela." :
+  "Il quadro complessivo è bilanciato.";
+const pillarLabel = (score) =>
+  score >= 1.5 ? "Strongly supportive" :
+  score >= 0.5 ? "Supportive" :
+  score > -0.5 ? "Balanced" :
+  score > -1.5 ? "Caution" : "Strong caution";
+
+let currentNav = null;
+const STORAGE_KEY = "portfolioBI_position";
+
+// Mirrors engine/scoring.py::pillar_position — computed here, in the
+// visitor's own browser, so personal figures never leave the device.
+function computePositionSignals(units, avgCost, nav, portfolioValue) {
+  if (!(units > 0) || !(avgCost > 0)) return null;
+  const costBasis = units * avgCost;
+  const marketValue = units * nav;
+  const pnlPct = (marketValue - costBasis) / costBasis * 100;
+
+  const signals = [];
+  if (pnlPct >= 25) {
+    signals.push({ name: "Unrealised P&L", reading: `+${pnlPct.toFixed(0)}%`, points: -1,
+      bias: "caution", why: "Sitting on a sizeable gain — a profit-taker would note the cushion." });
+  } else if (pnlPct <= -15) {
+    signals.push({ name: "Unrealised P&L", reading: `${pnlPct.toFixed(0)}%`, points: 0,
+      bias: "neutral", why: "Underwater — decision hinges on whether your original thesis still holds." });
+  } else {
+    signals.push({ name: "Unrealised P&L", reading: `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(0)}%`,
+      points: 0, bias: "neutral", why: "P&L is in a moderate range." });
+  }
+
+  if (portfolioValue > 0) {
+    const conc = marketValue / portfolioValue * 100;
+    if (conc >= 30) {
+      signals.push({ name: "Concentration", reading: `${conc.toFixed(0)}% of portfolio`, points: -1,
+        bias: "caution", why: "This single holding is a large share of your portfolio — concentration risk." });
+    } else if (conc <= 10) {
+      signals.push({ name: "Concentration", reading: `${conc.toFixed(0)}% of portfolio`, points: 1,
+        bias: "supportive", why: "A modest share of your portfolio — room to size up if conviction is high." });
+    } else {
+      signals.push({ name: "Concentration", reading: `${conc.toFixed(0)}% of portfolio`, points: 0,
+        bias: "neutral", why: "A moderate share of your portfolio." });
+    }
+  }
+  return signals;
+}
+
+function buildPrivateSection() {
+  const el = document.createElement("div");
+  el.className = "private";
+  el.innerHTML = `
+    <div class="private-head"><h2>La tua posizione (privata)</h2></div>
+    <div class="private-note">
+      🔒 Calcolato nel tuo browser — questi valori non vengono mai salvati sul
+      server né inviati da nessuna parte. Restano solo su questo dispositivo.
+    </div>
+    <div class="private-form">
+      <div>
+        <label for="pf-value">Valore portafoglio (€)</label>
+        <input id="pf-value" type="number" min="0" step="any" placeholder="es. 50000">
+      </div>
+      <div>
+        <label for="pf-units">Unità possedute</label>
+        <input id="pf-units" type="number" min="0" step="any" placeholder="es. 100">
+      </div>
+      <div>
+        <label for="pf-cost">Prezzo medio (€)</label>
+        <input id="pf-cost" type="number" min="0" step="any" placeholder="es. 15.00">
+      </div>
+    </div>
+    <label class="remember-row">
+      <input type="checkbox" id="pf-remember">
+      Ricorda questi valori solo su questo dispositivo
+    </label>
+    <div id="private-results"></div>
+  `;
+
+  const valueInput = el.querySelector("#pf-value");
+  const unitsInput = el.querySelector("#pf-units");
+  const costInput = el.querySelector("#pf-cost");
+  const rememberInput = el.querySelector("#pf-remember");
+  const resultsEl = el.querySelector("#private-results");
+  const headEl = el.querySelector(".private-head");
+
+  function renderResults() {
+    const portfolioValue = parseFloat(valueInput.value);
+    const units = parseFloat(unitsInput.value);
+    const avgCost = parseFloat(costInput.value);
+    const signals = currentNav != null ? computePositionSignals(units, avgCost, currentNav, portfolioValue) : null;
+
+    document.getElementById("private-badge")?.remove();
+    if (!signals) {
+      resultsEl.innerHTML = `<div id="private-placeholder">Inserisci i tuoi dati per vedere qui P&L e concentrazione — calcolo istantaneo, nessun invio.</div>`;
+      return;
+    }
+    const score = signals.reduce((sum, s) => sum + s.points, 0);
+    const badge = document.createElement("span");
+    badge.id = "private-badge";
+    badge.className = `badge ${badgeClass(score)}`;
+    badge.style.marginLeft = "10px";
+    badge.textContent = `${pillarLabel(score)} (${score >= 0 ? "+" : ""}${score.toFixed(1)})`;
+    headEl.querySelector("h2").after(badge);
+
+    resultsEl.innerHTML = "";
+    for (const s of signals) {
+      const row = document.createElement("div");
+      row.className = "signal";
+      row.innerHTML = `
+        <div class="mark ${s.bias}">${markSymbol[s.bias]}</div>
+        <div class="signal-body">
+          <span class="name">${s.name}</span><span class="reading">${s.reading}</span>
+          <div class="why">${s.why}</div>
+        </div>
+      `;
+      resultsEl.appendChild(row);
+    }
+  }
+
+  function persistIfWanted() {
+    if (rememberInput.checked) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        portfolioValue: valueInput.value, units: unitsInput.value, avgCost: costInput.value,
+      }));
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }
+
+  [valueInput, unitsInput, costInput].forEach(inp =>
+    inp.addEventListener("input", () => { renderResults(); persistIfWanted(); })
+  );
+  rememberInput.addEventListener("change", persistIfWanted);
+
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    try {
+      const d = JSON.parse(saved);
+      valueInput.value = d.portfolioValue || "";
+      unitsInput.value = d.units || "";
+      costInput.value = d.avgCost || "";
+      rememberInput.checked = true;
+    } catch (e) { /* ignore malformed local data */ }
+  }
+  renderResults();
+
+  return el;
+}
+
+function timeAgo(date) {
+  const s = Math.round((Date.now() - date.getTime()) / 1000);
+  if (s < 10) return "aggiornato ora";
+  if (s < 60) return `aggiornato ${s}s fa`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `aggiornato ${m} min fa`;
+  const h = Math.round(m / 60);
+  return `aggiornato ${h} ${h === 1 ? "ora" : "ore"} fa`;
+}
+
+function render(card, meta) {
+  const content = document.getElementById("content");
+  content.innerHTML = "";
+
+  const overview = document.createElement("div");
+  overview.className = "overview";
+  const bClass = badgeClass(card.total);
+  overview.innerHTML = `
+    <div class="overview-top">
+      <div>
+        <div class="name">${meta.assetName}</div>
+        <div class="nav">NAV: €${meta.nav}</div>
+      </div>
+      <span class="badge ${bClass}">${card.total >= 0 ? "+" : ""}${card.total.toFixed(1)}</span>
+    </div>
+    <div class="verdict">${verdictText(card.total)}</div>
+    <div class="refresh-row">
+      <button id="refresh-btn" type="button">↻ Aggiorna</button>
+      <span class="updated-at" id="updated-at">${timeAgo(meta.loadedAt)}</span>
+    </div>
+  `;
+  content.appendChild(overview);
+
+  const legend = document.createElement("div");
+  legend.className = "legend";
+  legend.innerHTML = ["supportive", "caution", "neutral"].map(b =>
+    `<span><span class="mark ${b}">${markSymbol[b]}</span>${markLabel[b]}</span>`
+  ).join("");
+  content.appendChild(legend);
+
+  for (const p of card.pillars) {
+    const el = document.createElement("div");
+    el.className = "pillar";
+    const bClass = badgeClass(p.score);
+    el.innerHTML = `
+      <div class="pillar-head">
+        <h2>${p.title}</h2>
+        <span class="badge ${bClass}">${p.label} (${p.score >= 0 ? "+" : ""}${p.score.toFixed(1)})</span>
+      </div>
+      <div class="signals"></div>
+    `;
+    const signalsEl = el.querySelector(".signals");
+    for (const s of p.signals) {
+      const row = document.createElement("div");
+      row.className = "signal";
+      row.innerHTML = `
+        <div class="mark ${s.bias}">${markSymbol[s.bias]}</div>
+        <div class="signal-body">
+          <span class="name">${s.name}</span><span class="reading">${s.reading}</span>
+          <div class="why">${s.why}</div>
+        </div>
+      `;
+      signalsEl.appendChild(row);
+    }
+    content.appendChild(el);
+  }
+
+  content.appendChild(buildPrivateSection());
+
+  const summaryEl = document.createElement("div");
+  const leanClass = card.total >= 1 ? "support-lean" : card.total <= -1 ? "caution-lean" : "";
+  summaryEl.className = `summary ${leanClass}`;
+  summaryEl.textContent = card.summary;
+  content.appendChild(summaryEl);
+}
+
+async function load() {
+  const loading = document.getElementById("loading");
+  const err = document.getElementById("error");
+  const btn = document.getElementById("refresh-btn");
+
+  loading.style.display = "block";
+  err.style.display = "none";
+  if (btn) btn.disabled = true;
+
+  try {
+    const cardRes = await fetch("data/scorecard.json", { cache: "no-store" });
+    if (!cardRes.ok) throw new Error("scorecard.json non trovato nel repo.");
+    const card = await cardRes.json();
+    loading.style.display = "none";
+    currentNav = card.meta.nav;
+    render(card, { assetName: card.meta.asset_name, nav: card.meta.nav, loadedAt: new Date() });
+    document.getElementById("refresh-btn").addEventListener("click", load);
+  } catch (e) {
+    loading.style.display = "none";
+    err.style.display = "block";
+    err.textContent = e.message;
+  }
+}
+load();
+</script>
+</body>
+</html>

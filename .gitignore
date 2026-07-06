@@ -1,0 +1,10 @@
+# Personal data — real portfolio figures, never publish these
+data/position.json
+data/scorecard.json
+
+# Local tool config
+.claude/
+
+# Python
+__pycache__/
+*.pyc

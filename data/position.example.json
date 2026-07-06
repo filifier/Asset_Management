@@ -1,0 +1,13 @@
+{
+  "_comment": "Copia questo file in position.json e metti i tuoi valori reali. position.json non viene versionato su git.",
+  "portfolio_value_eur": 50000,
+  "holdings": [
+    {
+      "name": "BGF Sustainable Energy E2 EUR",
+      "isin": "LU0171290074",
+      "profile_key": "clean_energy_equity",
+      "units": 100,
+      "avg_cost": 15.00
+    }
+  ]
+}

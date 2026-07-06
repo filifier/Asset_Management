@@ -1,0 +1,89 @@
+{
+  "pillars": [
+    {
+      "key": "asset",
+      "title": "Asset momentum & valuation",
+      "score": -1.0,
+      "label": "Caution",
+      "signals": [
+        {
+          "name": "52-week range",
+          "reading": "92% of range — near highs",
+          "points": -1,
+          "bias": "caution",
+          "why": "Near the top of its yearly range; less room before prior resistance."
+        },
+        {
+          "name": "1y vs benchmark",
+          "reading": "+28pp ahead",
+          "points": 1,
+          "bias": "supportive",
+          "why": "Beating its benchmark over the last year — momentum is with it."
+        },
+        {
+          "name": "5y vs benchmark",
+          "reading": "-24pp behind",
+          "points": -1,
+          "bias": "caution",
+          "why": "Structurally behind its benchmark over 5 years — recent strength may be cyclical."
+        }
+      ]
+    },
+    {
+      "key": "macro",
+      "title": "Macro context (weighted for this asset)",
+      "score": 0.0,
+      "label": "Balanced",
+      "signals": [
+        {
+          "name": "US 10Y",
+          "reading": "n/a",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Rising long yields pressure growth valuations (weight 1.0 for this asset type)."
+        },
+        {
+          "name": "VIX",
+          "reading": "n/a",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Low volatility supports risk assets (weight 0.7 for this asset type)."
+        },
+        {
+          "name": "GOLD",
+          "reading": "n/a",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Safe-haven demand proxy (weight 0.2 for this asset type)."
+        },
+        {
+          "name": "OIL",
+          "reading": "n/a",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Energy-complex linkage, mixed effect (weight 0.5 for this asset type)."
+        },
+        {
+          "name": "EURUSD",
+          "reading": "n/a",
+          "points": 0,
+          "bias": "neutral",
+          "why": "FX effect on EUR-denominated holding (weight 0.3 for this asset type)."
+        },
+        {
+          "name": "BTP BUND",
+          "reading": "n/a",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Euro-area stress proxy (weight 0.4 for this asset type)."
+        }
+      ]
+    }
+  ],
+  "total": -1.0,
+  "summary": "1 supportive signal(s) vs 2 caution signal(s). The board leans toward caution. This is a description of the current state — the decision to hold, add or trim is yours.",
+  "meta": {
+    "asset_name": "BGF Sustainable Energy E2 EUR",
+    "nav": 19.44
+  }
+}

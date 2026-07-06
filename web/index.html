@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio BI — Scorecard</title>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --card: #ffffff;
+    --ink: #1f2a24;
+    --muted: #6b7a70;
+    --border: #e4e0d6;
+    --support: #2f7a4f;
+    --support-bg: #e8f3ec;
+    --caution: #b5502a;
+    --caution-bg: #fbeee6;
+    --neutral: #8a8478;
+    --neutral-bg: #f1efe9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 32px 16px 64px;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  header { margin-bottom: 28px; }
+  header h1 { font-size: 22px; margin: 0 0 4px; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  .asset-line {
+    display: flex; justify-content: space-between; align-items: baseline;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;
+  }
+  .asset-line .name { font-weight: 600; font-size: 15px; }
+  .asset-line .nav { color: var(--muted); font-size: 14px; }
+
+  .pillar {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
+  }
+  .pillar-head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px;
+  }
+  .pillar-head h2 { font-size: 15px; margin: 0; }
+  .badge {
+    font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  }
+  .badge.support { color: var(--support); background: var(--support-bg); }
+  .badge.caution { color: var(--caution); background: var(--caution-bg); }
+  .badge.neutral { color: var(--neutral); background: var(--neutral-bg); }
+
+  .signal {
+    display: flex; gap: 10px; padding: 8px 0;
+    border-top: 1px solid var(--border);
+  }
+  .signal:first-child { border-top: none; }
+  .mark {
+    flex: 0 0 20px; height: 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; margin-top: 1px;
+  }
+  .mark.supportive { color: var(--support); background: var(--support-bg); }
+  .mark.caution { color: var(--caution); background: var(--caution-bg); }
+  .mark.neutral { color: var(--neutral); background: var(--neutral-bg); }
+  .signal-body .name { font-weight: 600; font-size: 13.5px; }
+  .signal-body .reading { color: var(--muted); font-size: 13px; margin-left: 6px; }
+  .signal-body .why { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+  .summary {
+    background: var(--card); border: 1px solid var(--border);
+    border-left: 4px solid var(--neutral);
+    border-radius: 12px; padding: 16px 20px; font-size: 13.5px; color: var(--ink);
+    line-height: 1.5;
+  }
+  .summary.support-lean { border-left-color: var(--support); }
+  .summary.caution-lean { border-left-color: var(--caution); }
+
+  .disclaimer {
+    margin-top: 24px; font-size: 11.5px; color: var(--muted); text-align: center;
+  }
+  #error {
+    display: none; background: var(--caution-bg); color: var(--caution);
+    border-radius: 12px; padding: 16px 20px; font-size: 13.5px; line-height: 1.5;
+  }
+  #error code {
+    background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 4px;
+  }
+  #loading {
+    text-align: center; color: var(--muted); font-size: 13.5px; padding: 40px 0;
+  }
+
+  .overview {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 20px;
+  }
+  .overview-top {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  }
+  .overview .name { font-weight: 600; font-size: 15px; }
+  .overview .nav { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .overview .verdict {
+    font-size: 13.5px; margin-top: 10px; color: var(--ink); line-height: 1.4;
+  }
+  .refresh-row {
+    display: flex; align-items: center; gap: 10px; margin-top: 12px;
+  }
+  .updated-at { font-size: 11.5px; color: var(--muted); }
+  #refresh-btn {
+    font-size: 12.5px; font-weight: 600; color: var(--ink);
+    background: var(--neutral-bg); border: 1px solid var(--border);
+    border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  }
+  #refresh-btn:hover { background: var(--border); }
+  #refresh-btn:disabled { opacity: 0.6; cursor: default; }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted);
+    margin-bottom: 16px; padding: 0 4px;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend .mark { flex: 0 0 16px; height: 16px; font-size: 10px; margin-top: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Portfolio BI</h1>
+    <p>Scorecard trasparente — descrive lo stato, non prescrive decisioni</p>
+  </header>
+
+  <div id="loading">Caricamento scorecard…</div>
+  <div id="error"></div>
+  <div id="content"></div>
+
+  <p class="disclaimer">Uso personale e informativo. Non è consulenza finanziaria.</p>
+</div>
+
+<script>
+const markSymbol = { supportive: "+", caution: "!", neutral: "·" };
+const markLabel = { supportive: "favorevole", caution: "attenzione", neutral: "neutro" };
+const badgeClass = (score) => score >= 0.5 ? "support" : score <= -0.5 ? "caution" : "neutral";
+const verdictText = (total) =>
+  total >= 1 ? "Il quadro complessivo è favorevole." :
+  total <= -1 ? "Il quadro complessivo invita a cautela." :
+  "Il quadro complessivo è bilanciato.";
+
+function timeAgo(date) {
+  const s = Math.round((Date.now() - date.getTime()) / 1000);
+  if (s < 10) return "aggiornato ora";
+  if (s < 60) return `aggiornato ${s}s fa`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `aggiornato ${m} min fa`;
+  const h = Math.round(m / 60);
+  return `aggiornato ${h} ${h === 1 ? "ora" : "ore"} fa`;
+}
+
+function render(card, meta) {
+  const content = document.getElementById("content");
+  content.innerHTML = "";
+
+  const overview = document.createElement("div");
+  overview.className = "overview";
+  const bClass = badgeClass(card.total);
+  overview.innerHTML = `
+    <div class="overview-top">
+      <div>
+        <div class="name">${meta.assetName}</div>
+        <div class="nav">NAV: €${meta.nav}</div>
+      </div>
+      <span class="badge ${bClass}">${card.total >= 0 ? "+" : ""}${card.total.toFixed(1)}</span>
+    </div>
+    <div class="verdict">${verdictText(card.total)}</div>
+    <div class="refresh-row">
+      <button id="refresh-btn" type="button">↻ Aggiorna</button>
+      <span class="updated-at" id="updated-at">${timeAgo(meta.loadedAt)}</span>
+    </div>
+  `;
+  content.appendChild(overview);
+
+  const legend = document.createElement("div");
+  legend.className = "legend";
+  legend.innerHTML = ["supportive", "caution", "neutral"].map(b =>
+    `<span><span class="mark ${b}">${markSymbol[b]}</span>${markLabel[b]}</span>`
+  ).join("");
+  content.appendChild(legend);
+
+  for (const p of card.pillars) {
+    const el = document.createElement("div");
+    el.className = "pillar";
+    const bClass = badgeClass(p.score);
+    el.innerHTML = `
+      <div class="pillar-head">
+        <h2>${p.title}</h2>
+        <span class="badge ${bClass}">${p.label} (${p.score >= 0 ? "+" : ""}${p.score.toFixed(1)})</span>
+      </div>
+      <div class="signals"></div>
+    `;
+    const signalsEl = el.querySelector(".signals");
+    for (const s of p.signals) {
+      const row = document.createElement("div");
+      row.className = "signal";
+      row.innerHTML = `
+        <div class="mark ${s.bias}">${markSymbol[s.bias]}</div>
+        <div class="signal-body">
+          <span class="name">${s.name}</span><span class="reading">${s.reading}</span>
+          <div class="why">${s.why}</div>
+        </div>
+      `;
+      signalsEl.appendChild(row);
+    }
+    content.appendChild(el);
+  }
+
+  const summaryEl = document.createElement("div");
+  const leanClass = card.total >= 1 ? "support-lean" : card.total <= -1 ? "caution-lean" : "";
+  summaryEl.className = `summary ${leanClass}`;
+  summaryEl.textContent = card.summary;
+  content.appendChild(summaryEl);
+}
+
+async function load() {
+  const loading = document.getElementById("loading");
+  const err = document.getElementById("error");
+  const content = document.getElementById("content");
+  const btn = document.getElementById("refresh-btn");
+
+  loading.style.display = "block";
+  err.style.display = "none";
+  if (btn) btn.disabled = true;
+
+  if (location.protocol === "file:") {
+    loading.style.display = "none";
+    err.style.display = "block";
+    err.innerHTML = "Questa pagina va aperta tramite il server locale, non da file. " +
+      "Nella cartella del progetto esegui <code>python3 -m http.server 8420</code> " +
+      "e apri <code>http://localhost:8420/web/index.html</code>.";
+    return;
+  }
+
+  try {
+    const cardRes = await fetch("../data/scorecard.json", { cache: "no-store" });
+    if (!cardRes.ok) throw new Error("scorecard.json non trovato — esegui prima 'python run.py'");
+    const card = await cardRes.json();
+    loading.style.display = "none";
+    render(card, { assetName: card.meta.asset_name, nav: card.meta.nav, loadedAt: new Date() });
+    document.getElementById("refresh-btn").addEventListener("click", load);
+  } catch (e) {
+    loading.style.display = "none";
+    err.style.display = "block";
+    err.textContent = e.message;
+  }
+}
+load();
+</script>
+</body>
+</html>
