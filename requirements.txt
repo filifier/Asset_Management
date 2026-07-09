@@ -1,0 +1,2 @@
+numpy>=2.4
+statsmodels>=0.14

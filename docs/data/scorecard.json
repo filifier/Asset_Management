@@ -51,14 +51,14 @@
         },
         {
           "name": "VIX",
-          "reading": "17.0",
+          "reading": "17.1",
           "points": 1,
           "bias": "supportive",
           "why": "Low volatility supports risk assets (weight 0.7 for this asset type)."
         },
         {
           "name": "GOLD",
-          "reading": "$4,114",
+          "reading": "$4,110",
           "points": 0,
           "bias": "neutral",
           "why": "Safe-haven demand proxy (weight 0.2 for this asset type)."
@@ -101,21 +101,21 @@
         },
         {
           "name": "VIX",
-          "reading": "-10.3% over ~21d (falling)",
+          "reading": "-9.8% over ~21d (falling)",
           "points": 1,
           "bias": "supportive",
           "why": "Trend, not a prediction — plain % change over the lookback window (weight 0.7 for this asset type)."
         },
         {
           "name": "GOLD",
-          "reading": "-5.1% over ~21d (falling)",
+          "reading": "-5.2% over ~21d (falling)",
           "points": 1,
           "bias": "supportive",
           "why": "Trend, not a prediction — plain % change over the lookback window (weight 0.2 for this asset type)."
         },
         {
           "name": "OIL",
-          "reading": "-19.4% over ~21d (falling)",
+          "reading": "-18.9% over ~21d (falling)",
           "points": 0,
           "bias": "neutral",
           "why": "Trend, not a prediction — plain % change over the lookback window (weight 0.5 for this asset type)."
@@ -135,10 +135,102 @@
           "why": "No historical data available yet for this factor."
         }
       ]
+    },
+    {
+      "key": "factor_regression",
+      "title": "Analisi fattoriale (regressione OLS)",
+      "score": 2,
+      "label": "Strongly supportive",
+      "signals": [
+        {
+          "name": "Adattamento del modello",
+          "reading": "R²=0.26 (adj. 0.25), n=960",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Regressione OLS sui rendimenti giornalieri, 2021-08-17 → 2026-07-02. R² basso è normale e onesto: i mercati non sono spiegati bene da un modello lineare."
+        },
+        {
+          "name": "S&P 500",
+          "reading": "coef=+0.666, p=0.000",
+          "points": 1,
+          "bias": "supportive",
+          "why": "Sensibilità storica del rendimento dell'asset a variazioni di questo fattore — statisticamente significativo (p<0.05) — VIF=17.6, alta multicollinearità: coefficiente poco affidabile. Non è una previsione: descrive solo la relazione osservata."
+        },
+        {
+          "name": "VIX",
+          "reading": "coef=+0.050, p=0.121",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Sensibilità storica del rendimento dell'asset a variazioni di questo fattore — non significativo (p=0.12) — VIF=2.7. Non è una previsione: descrive solo la relazione osservata."
+        },
+        {
+          "name": "US 10Y",
+          "reading": "coef=-0.227, p=0.763",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Sensibilità storica del rendimento dell'asset a variazioni di questo fattore — non significativo (p=0.76) — VIF=2.0. Non è una previsione: descrive solo la relazione osservata."
+        },
+        {
+          "name": "Term Spread (10Y-2Y)",
+          "reading": "coef=-0.821, p=0.296",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Sensibilità storica del rendimento dell'asset a variazioni di questo fattore — non significativo (p=0.30) — VIF=1.1. Non è una previsione: descrive solo la relazione osservata."
+        },
+        {
+          "name": "Oil (WTI)",
+          "reading": "coef=-0.012, p=0.420",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Sensibilità storica del rendimento dell'asset a variazioni di questo fattore — non significativo (p=0.42) — VIF=1.1. Non è una previsione: descrive solo la relazione osservata."
+        },
+        {
+          "name": "EUR/USD",
+          "reading": "coef=+0.164, p=0.071",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Sensibilità storica del rendimento dell'asset a variazioni di questo fattore — non significativo (p=0.07) — VIF=1.6. Non è una previsione: descrive solo la relazione osservata."
+        },
+        {
+          "name": "Gold",
+          "reading": "coef=+0.139, p=0.000",
+          "points": 1,
+          "bias": "supportive",
+          "why": "Sensibilità storica del rendimento dell'asset a variazioni di questo fattore — statisticamente significativo (p<0.05) — VIF=1.2. Non è una previsione: descrive solo la relazione osservata."
+        },
+        {
+          "name": "MOVE",
+          "reading": "coef=-0.039, p=0.000",
+          "points": -1,
+          "bias": "caution",
+          "why": "Sensibilità storica del rendimento dell'asset a variazioni di questo fattore — statisticamente significativo (p<0.05) — VIF=1.4. Non è una previsione: descrive solo la relazione osservata."
+        },
+        {
+          "name": "DXY",
+          "reading": "coef=+0.300, p=0.008",
+          "points": 1,
+          "bias": "supportive",
+          "why": "Sensibilità storica del rendimento dell'asset a variazioni di questo fattore — statisticamente significativo (p<0.05) — VIF=2.1. Non è una previsione: descrive solo la relazione osservata."
+        },
+        {
+          "name": "NASDAQ 100",
+          "reading": "coef=-0.129, p=0.125",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Sensibilità storica del rendimento dell'asset a variazioni di questo fattore — non significativo (p=0.13) — VIF=12.6, alta multicollinearità: coefficiente poco affidabile. Non è una previsione: descrive solo la relazione osservata."
+        },
+        {
+          "name": "HY Credit",
+          "reading": "coef=+0.052, p=0.713",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Sensibilità storica del rendimento dell'asset a variazioni di questo fattore — non significativo (p=0.71) — VIF=4.0. Non è una previsione: descrive solo la relazione osservata."
+        }
+      ]
     }
   ],
-  "total": 0.0,
-  "summary": "4 supportive signal(s) vs 4 caution signal(s). The board leans balanced. This is a description of the current state — the decision to hold, add or trim is yours.",
+  "total": 2.0,
+  "summary": "7 supportive signal(s) vs 5 caution signal(s). The board leans supportive. This is a description of the current state — the decision to hold, add or trim is yours.",
   "meta": {
     "asset_name": "BGF Sustainable Energy E2 EUR",
     "nav": 18.66

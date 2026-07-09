@@ -17,14 +17,24 @@ const SERIES_DEFS = [
   { key: "gold", label: "Gold", color: "#c9a227", defaultOn: false, historyKey: "gold" },
   { key: "oil_wti", label: "Oil (WTI)", color: "#6b4a3a", defaultOn: false, historyKey: "oil_wti" },
   { key: "eurusd", label: "EUR/USD", color: "#3b8a9e", defaultOn: false, historyKey: "eurusd" },
+  { key: "move", label: "MOVE", color: "#9b5fb0", defaultOn: false, historyKey: "move" },
+  { key: "us_2y", label: "US 2Y", color: "#2d9cdb", defaultOn: false, historyKey: "us_2y" },
+  { key: "dxy", label: "DXY", color: "#c98a3e", defaultOn: false, historyKey: "dxy" },
+  { key: "nasdaq100", label: "NASDAQ 100", color: "#d1495b", defaultOn: false, historyKey: "nasdaq100" },
+  { key: "hy_credit", label: "HY Credit", color: "#7a8471", defaultOn: false, historyKey: "hy_credit" },
 ];
 
-const RANGE_DAYS = { "3M": 63, "6M": 126, "1Y": 252, "5Y": 1260, "All": Infinity };
+// "2021" is a fixed calendar floor (2021-01-01), not a trading-day count —
+// it's what makes every series (including the fund's own NAV, whose raw
+// history goes back to 2005) start from the same actual date instead of
+// just "the same number of points back".
+const RANGE_DAYS = { "3M": 63, "6M": 126, "1Y": 252, "5Y": 1260, "Dal 2021": "2021" };
+const HISTORY_FLOOR = "2021-01-01";
 
-function sliceRange(series, tradingDays) {
+function sliceRange(series, spec) {
   if (!series || !series.length) return [];
-  if (tradingDays === Infinity) return series;
-  return series.slice(Math.max(0, series.length - tradingDays));
+  if (spec === "2021") return series.filter(([d]) => d >= HISTORY_FLOOR);
+  return series.slice(Math.max(0, series.length - spec));
 }
 
 function rebaseTo100(series) {
@@ -146,7 +156,7 @@ async function initChartSection(container, sources) {
   }
 
   const state = {
-    range: "1Y",
+    range: "Dal 2021",
     visible: new Set(SERIES_DEFS.filter(s => s.defaultOn).map(s => s.key)),
     showProjection: true,
   };

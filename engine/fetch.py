@@ -25,6 +25,15 @@ from urllib.error import URLError, HTTPError
 
 UA = {"User-Agent": "Mozilla/5.0 (compatible; portfolio-bi/1.0)"}
 
+# Fixed start date for all benchmark/macro history (and the window the
+# chart + regression use for the fund too). 2021-01-01 deliberately
+# excludes the 2020 COVID crash/rebound, whose extreme moves would
+# otherwise dominate a linear trend or regression fit. Every series is
+# fetched from this same date so they're comparable on equal footing —
+# not just "same number of days back", but the same actual calendar
+# window.
+HISTORY_START_DATE = "2021-01-01"
+
 # The fund page's performance-chart AJAX endpoint. The numeric id in the
 # path is specific to this fund's page (BlackRock generates it per
 # product) — if you point this at a different fund, view the fund's page
@@ -39,14 +48,22 @@ _NAV_ENTRY_RE = re.compile(
     r'formattedX:\s*"([^"]+)"'
 )
 
-# Yahoo Finance symbols -> friendly keys used by the macro layer
+# Yahoo Finance symbols -> friendly keys used by the macro layer.
+# Coverage of the 14-factor list requested for the regression: 11 of 14
+# are free and available here; REAL_YIELD (10Y TIPS), INFLATION_BREAKEVEN
+# and CESI are NOT — see README "Fattori macro" section for why.
 YAHOO_SYMBOLS = {
-    "sp500": "^GSPC",
-    "vix": "^VIX",
-    "us_10y": "^TNX",     # already expressed as a plain yield, e.g. 4.57 = 4.57%
-    "oil_wti": "CL=F",
+    "sp500": "^GSPC",         # X10 SP500
+    "vix": "^VIX",             # X1  VIX
+    "us_10y": "^TNX",          # X3  US10Y — already a plain yield, e.g. 4.57 = 4.57%
+    "oil_wti": "CL=F",         # X13 CRUDE_OIL
     "eurusd": "EURUSD=X",
-    "gold": "GC=F",
+    "gold": "GC=F",            # X12 GOLD
+    "move": "^MOVE",           # X2  MOVE (bond market volatility)
+    "us_2y": "2YY=F",          # X4  US2Y — 2-year yield futures, tracks spot yield closely
+    "dxy": "DX-Y.NYB",         # X7  DXY
+    "nasdaq100": "^NDX",       # X11 NASDAQ
+    "hy_credit": "HYG",        # X14 HY_CREDIT (iShares iBoxx HY Corporate Bond ETF)
 }
 
 
@@ -82,20 +99,21 @@ def fetch_fund_nav():
     return latest, as_of, history
 
 
-def fetch_yahoo_chart(symbol, range_="6y", interval="1d"):
+def fetch_yahoo_chart(symbol, start_date=HISTORY_START_DATE, interval="1d"):
     """Return (latest_close, history). history is a list of (iso_date,
     close) tuples, oldest first, gaps (None closes) dropped. On any
     failure, returns (None, []) — same "never fabricate" contract as
     the rest of this module.
 
-    Default range is 6y, not the ~1mo the outlook pillar actually needs,
-    because run.py also uses the S&P 500 series here for the asset
-    pillar's 5-year benchmark comparison — that needs 5 years of history
-    or it silently compares against whatever's oldest in a shorter
-    window (that was a real bug: with the previous 6mo default, "5y vs
-    benchmark" was actually comparing against ~6 months ago)."""
+    Fetches a FIXED calendar window (start_date -> now) rather than a
+    rolling "last N years" range, so every symbol lines up on the same
+    actual dates — required for both the chart's indexed-to-100 overlay
+    and any regression across factors to be a fair comparison."""
+    period1 = int(dt.datetime.strptime(start_date, "%Y-%m-%d")
+                  .replace(tzinfo=dt.timezone.utc).timestamp())
+    period2 = int(dt.datetime.now(dt.timezone.utc).timestamp())
     url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol)}"
-           f"?range={range_}&interval={interval}")
+           f"?period1={period1}&period2={period2}&interval={interval}")
     try:
         text = _get(url)
         result = json.loads(text)["chart"]["result"][0]

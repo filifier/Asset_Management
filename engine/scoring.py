@@ -19,6 +19,8 @@ a profit-taker would note. The engine NEVER concludes for you.
 from dataclasses import dataclass, field
 from typing import List, Dict, Literal
 
+from engine import regression
+
 
 Bias = Literal["supportive", "caution", "neutral"]
 
@@ -223,6 +225,57 @@ def pillar_outlook(history: Dict[str, list], profile_key: str,
     return p
 
 
+# ── PILLAR: FACTOR REGRESSION (statistical, descriptive) ────────────
+# How sensitive has the fund's daily return historically been to each
+# macro factor? Real OLS coefficients with p-values and VIF — see
+# engine/regression.py for the full methodology. This is DESCRIPTIVE
+# (historical co-movement), not a forecast: it doesn't say whether a
+# factor will rise or fall, only how the asset has moved when it did.
+# A factor only counts toward the score if statistically significant
+# (p < 0.05) — everything else is shown but scored neutral.
+def pillar_factor_regression(nav_history: list, macro_history: Dict[str, list]) -> Pillar:
+    p = Pillar("factor_regression", "Analisi fattoriale (regressione OLS)")
+    result = regression.fit_factor_model(nav_history, macro_history)
+
+    if "error" in result:
+        p.add(Signal("Modello", "non disponibile", 0, "neutral", result["error"]))
+        return p
+
+    p.add(Signal("Adattamento del modello",
+                 f"R²={result['r2']:.2f} (adj. {result['adj_r2']:.2f}), n={result['n_obs']}",
+                 0, "neutral",
+                 f"Regressione OLS sui rendimenti giornalieri, {result['start']} → {result['end']}. "
+                 f"R² basso è normale e onesto: i mercati non sono spiegati bene da un modello lineare."))
+
+    for key, stats in result["factors"].items():
+        label = regression.FACTOR_LABELS.get(key, key.upper())
+        coef, pval, vif = stats["coef"], stats["pvalue"], stats["vif"]
+        significant = pval < 0.05
+        if significant and coef > 0:
+            pts, bias = 1, "supportive"
+        elif significant and coef < 0:
+            pts, bias = -1, "caution"
+        else:
+            pts, bias = 0, "neutral"
+
+        vif_note = ""
+        if vif is not None:
+            if vif >= 10:
+                vif_note = f" — VIF={vif:.1f}, alta multicollinearità: coefficiente poco affidabile."
+            elif vif >= 5:
+                vif_note = f" — VIF={vif:.1f}, multicollinearità moderata."
+            else:
+                vif_note = f" — VIF={vif:.1f}."
+
+        sig_note = "statisticamente significativo (p<0.05)" if significant else f"non significativo (p={pval:.2f})"
+        p.add(Signal(label, f"coef={coef:+.3f}, p={pval:.3f}", pts, bias,
+                     f"Sensibilità storica del rendimento dell'asset a variazioni di questo fattore — "
+                     f"{sig_note}{vif_note} Non è una previsione: descrive solo la relazione osservata."))
+
+    p.score = max(-2, min(2, p.score))
+    return p
+
+
 # ── PILLAR 3: YOUR POSITION ─────────────────────────────────────────
 def pillar_position(invested_amount: float, purchase_nav: float, nav: float,
                     portfolio_value: float) -> Pillar:
@@ -297,21 +350,23 @@ def _assemble(pillars: List[Pillar]) -> dict:
 
 
 def build_scorecard(inputs: dict) -> dict:
-    """Full scorecard: asset + macro + outlook + your position. Contains
-    personal portfolio figures (P&L, concentration) — keep this one
-    local, never publish it."""
+    """Full scorecard: asset + macro + outlook + factor regression +
+    your position. Contains personal portfolio figures (P&L,
+    concentration) — keep this one local, never publish it."""
     a = pillar_asset(**inputs["asset"], nav_trend_1m=inputs.get("asset_nav_trend_1m"))
     m = pillar_macro(inputs["macro"], inputs["profile_key"])
     o = pillar_outlook(inputs["macro_history"], inputs["profile_key"])
+    f = pillar_factor_regression(inputs["asset_nav_history"], inputs["macro_history"])
     pos = pillar_position(**inputs["position"])
-    return _assemble([a, m, o, pos])
+    return _assemble([a, m, o, f, pos])
 
 
 def build_public_scorecard(inputs: dict) -> dict:
-    """Asset + macro + outlook — no position/portfolio data. Safe to
-    publish: describes the asset and market against themselves, not
-    your personal holding."""
+    """Asset + macro + outlook + factor regression — no position/
+    portfolio data. Safe to publish: describes the asset and market
+    against themselves, not your personal holding."""
     a = pillar_asset(**inputs["asset"], nav_trend_1m=inputs.get("asset_nav_trend_1m"))
     m = pillar_macro(inputs["macro"], inputs["profile_key"])
     o = pillar_outlook(inputs["macro_history"], inputs["profile_key"])
-    return _assemble([a, m, o])
+    f = pillar_factor_regression(inputs["asset_nav_history"], inputs["macro_history"])
+    return _assemble([a, m, o, f])

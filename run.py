@@ -175,6 +175,7 @@ def main():
         "profile_key": holding["profile_key"],
         "asset": asset_inputs,
         "asset_nav_trend_1m": nav_trend_1m,
+        "asset_nav_history": history.get("fund_nav", []),
         "macro": macro,
         "macro_history": history,
         "position": {
