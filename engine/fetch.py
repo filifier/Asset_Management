@@ -2,7 +2,10 @@
 fetch.py — pulls the inputs the scoring engine needs.
 
 Two very different reliability tiers, and the code is honest about it:
-  • Benchmarks (S&P, VIX, yields, oil, FX) → Stooq, clean & free.
+  • Benchmarks (S&P, VIX, yields, oil, FX, gold) → Yahoo Finance's public
+    chart endpoint, clean & free, no API key. Also gives us history, not
+    just the latest print — that's what engine/scoring.py's outlook
+    pillar uses to compute trend.
   • Your fund NAV → scraped from BlackRock's page by ISIN. FRAGILE by
     nature (it's a UCITS mutual fund; no free structured feed exists).
     If the scrape fails, we DON'T fabricate — we return None and the
@@ -15,6 +18,7 @@ rather than inventing numbers.
 import re
 import json
 import datetime as dt
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
@@ -24,14 +28,14 @@ FUND_URL = ("https://www.blackrock.com/ch/individual/en/products/229301/"
             "blackrock-new-energy-e2-eur-fund")
 FUND_ISIN = "LU0171290074"
 
-# Stooq symbols -> friendly keys used by the macro layer
-BENCHMARKS = {
-    "^spx": "sp500",
-    "^vix": "vix",
-    "10usy.b": "us_10y",
-    "cl.f": "oil_wti",
-    "eurusd": "eurusd",
-    "xauusd": "gold",
+# Yahoo Finance symbols -> friendly keys used by the macro layer
+YAHOO_SYMBOLS = {
+    "sp500": "^GSPC",
+    "vix": "^VIX",
+    "us_10y": "^TNX",     # already expressed as a plain yield, e.g. 4.57 = 4.57%
+    "oil_wti": "CL=F",
+    "eurusd": "EURUSD=X",
+    "gold": "GC=F",
 }
 
 
@@ -62,34 +66,43 @@ def fetch_fund_nav():
     return None, None
 
 
-def fetch_stooq(symbol):
-    url = f"https://stooq.com/q/l/?s={symbol}&f=sd2t2ohlcv&h&e=csv"
+def fetch_yahoo_chart(symbol, range_="6mo", interval="1d"):
+    """Return (latest_close, history). history is a list of (iso_date,
+    close) tuples, oldest first, gaps (None closes) dropped. On any
+    failure, returns (None, []) — same "never fabricate" contract as
+    the rest of this module."""
+    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol)}"
+           f"?range={range_}&interval={interval}")
     try:
         text = _get(url)
-    except (URLError, HTTPError, TimeoutError):
-        return None
-    lines = text.strip().splitlines()
-    if len(lines) < 2:
-        return None
-    rec = dict(zip(lines[0].split(","), lines[1].split(",")))
-    try:
-        return float(rec.get("Close", ""))
-    except (ValueError, TypeError):
-        return None
+        result = json.loads(text)["chart"]["result"][0]
+        timestamps = result["timestamp"]
+        closes = result["indicators"]["quote"][0]["close"]
+    except (URLError, HTTPError, TimeoutError, KeyError, IndexError,
+            TypeError, ValueError):
+        return None, []
+    history = [
+        (dt.datetime.utcfromtimestamp(t).date().isoformat(), c)
+        for t, c in zip(timestamps, closes) if c is not None
+    ]
+    latest = history[-1][1] if history else None
+    return latest, history
 
 
 def fetch_all():
     print("Fetching benchmarks…")
-    out = {}
-    for sym, key in BENCHMARKS.items():
-        out[key] = fetch_stooq(sym)
-        print(f"  {key}: {out[key]}")
+    out, history = {}, {}
+    for key, symbol in YAHOO_SYMBOLS.items():
+        latest, hist = fetch_yahoo_chart(symbol)
+        out[key], history[key] = latest, hist
+        print(f"  {key}: {latest}  ({len(hist)} historical points)")
     print("Fetching fund NAV (BlackRock)…")
     nav, as_of = fetch_fund_nav()
     out["fund_nav"], out["fund_asof"] = nav, as_of
     print(f"  NAV: {nav} ({as_of})")
-    return out
+    return out, history
 
 
 if __name__ == "__main__":
-    print(json.dumps(fetch_all(), indent=2))
+    market, history = fetch_all()
+    print(json.dumps({"market": market, "history_points": {k: len(v) for k, v in history.items()}}, indent=2))

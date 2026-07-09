@@ -143,6 +143,68 @@ def pillar_macro(macro: Dict[str, dict], profile_key: str) -> Pillar:
     return p
 
 
+# ── PILLAR: MACRO OUTLOOK (trend) ───────────────────────────────────
+# Companion to "Macro context": same factors, but reads DIRECTION over
+# the recent past instead of the current LEVEL. This is the "forecast"
+# layer — deliberately a plain % change over a lookback window, not a
+# model. No black box: every number here you could recompute by hand
+# from the same history the engine used.
+#
+# Polarity: does a RISING reading help or hurt this asset type?
+#   +1 = rising is supportive, -1 = rising is a headwind, 0 = mixed/
+#   asset-dependent (shown for context, doesn't move the score).
+TREND_POLARITY = {
+    "us_10y": -1,    # rising yields = headwind for growth valuations
+    "vix": -1,       # rising volatility = risk-off = headwind
+    "gold": -1,      # rising gold = risk-off signal = mild headwind
+    "oil": 0,        # mixed / energy-complex linked, no clean direction
+    "eurusd": 0,      # mixed / depends on currency exposure
+    "btp_bund": 0,   # not tracked yet
+}
+
+
+def pillar_outlook(history: Dict[str, list], profile_key: str,
+                   lookback_days: int = 21) -> Pillar:
+    """
+    history: dict of {factor: [(iso_date, close), ...]}, oldest first —
+      same keys as the macro dict (sp500, vix, us_10y, oil_wti, eurusd, gold).
+    lookback_days: how many data points back to compare against (~21
+      trading days ≈ 1 calendar month).
+    """
+    p = Pillar("outlook", "Macro outlook (trend, last ~1 month)")
+    weights = ASSET_PROFILES[profile_key]["macro_weights"]
+    key_map = {"oil": "oil_wti"}  # weight keys vs history/fetch keys differ for oil
+    for factor, w in weights.items():
+        series = history.get(key_map.get(factor, factor))
+        if not series or len(series) < 2:
+            p.add(Signal(factor.replace("_", " ").upper(), "n/a", 0, "neutral",
+                         "No historical data available yet for this factor."))
+            continue
+        closes = [c for _, c in series]
+        latest = closes[-1]
+        past = closes[max(0, len(closes) - 1 - lookback_days)]
+        if not past:
+            continue
+        change_pct = (latest - past) / past * 100
+        direction = "rising" if change_pct > 0.5 else ("falling" if change_pct < -0.5 else "flat")
+
+        polarity = TREND_POLARITY.get(factor, 0)
+        if direction == "flat" or polarity == 0:
+            pts, bias = 0, "neutral"
+        else:
+            signed = 1 if direction == "rising" else -1
+            pts = polarity * signed
+            bias = "supportive" if pts > 0 else "caution"
+
+        p.add(Signal(factor.replace("_", " ").upper(),
+                     f"{change_pct:+.1f}% over ~{lookback_days}d ({direction})",
+                     pts, bias,
+                     f"Trend, not a prediction — plain % change over the lookback window "
+                     f"(weight {w:.1f} for this asset type)."))
+    p.score = max(-2, min(2, p.score))
+    return p
+
+
 # ── PILLAR 3: YOUR POSITION ─────────────────────────────────────────
 def pillar_position(units: float, avg_cost: float, nav: float,
                     portfolio_value: float) -> Pillar:
@@ -210,17 +272,21 @@ def _assemble(pillars: List[Pillar]) -> dict:
 
 
 def build_scorecard(inputs: dict) -> dict:
-    """Full scorecard: asset + macro + your position. Contains personal
-    portfolio figures (P&L, concentration) — keep this one local, never publish it."""
+    """Full scorecard: asset + macro + outlook + your position. Contains
+    personal portfolio figures (P&L, concentration) — keep this one
+    local, never publish it."""
     a = pillar_asset(**inputs["asset"])
     m = pillar_macro(inputs["macro"], inputs["profile_key"])
+    o = pillar_outlook(inputs["macro_history"], inputs["profile_key"])
     pos = pillar_position(**inputs["position"])
-    return _assemble([a, m, pos])
+    return _assemble([a, m, o, pos])
 
 
 def build_public_scorecard(inputs: dict) -> dict:
-    """Asset + macro only — no position/portfolio data. Safe to publish:
-    describes the asset against the market, not your personal holding."""
+    """Asset + macro + outlook — no position/portfolio data. Safe to
+    publish: describes the asset and market against themselves, not
+    your personal holding."""
     a = pillar_asset(**inputs["asset"])
     m = pillar_macro(inputs["macro"], inputs["profile_key"])
-    return _assemble([a, m])
+    o = pillar_outlook(inputs["macro_history"], inputs["profile_key"])
+    return _assemble([a, m, o])

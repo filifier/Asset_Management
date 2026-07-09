@@ -93,7 +93,7 @@ def main():
     with open(os.path.join(HERE, "data", "position.json")) as f:
         position = json.load(f)
 
-    market = fetch.fetch_all()
+    market, history = fetch.fetch_all()
     nav = market.get("fund_nav") or FUND_REFERENCE["last_known_nav"]
     if not market.get("fund_nav"):
         print(f"\n  (NAV fetch failed — using last known {nav})")
@@ -113,6 +113,7 @@ def main():
             "bench_5y": FUND_REFERENCE["bench_5y"],
         },
         "macro": macro,
+        "macro_history": history,
         "position": {
             "units": holding["units"],
             "avg_cost": holding["avg_cost"],

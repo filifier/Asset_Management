@@ -37,35 +37,35 @@
       "signals": [
         {
           "name": "US 10Y",
-          "reading": "n/a",
-          "points": 0,
-          "bias": "neutral",
+          "reading": "4.57%",
+          "points": -1,
+          "bias": "caution",
           "why": "Rising long yields pressure growth valuations (weight 1.0 for this asset type)."
         },
         {
           "name": "VIX",
-          "reading": "n/a",
-          "points": 0,
-          "bias": "neutral",
+          "reading": "16.8",
+          "points": 1,
+          "bias": "supportive",
           "why": "Low volatility supports risk assets (weight 0.7 for this asset type)."
         },
         {
           "name": "GOLD",
-          "reading": "n/a",
+          "reading": "$4,120",
           "points": 0,
           "bias": "neutral",
           "why": "Safe-haven demand proxy (weight 0.2 for this asset type)."
         },
         {
           "name": "OIL",
-          "reading": "n/a",
+          "reading": "$73",
           "points": 0,
           "bias": "neutral",
           "why": "Energy-complex linkage, mixed effect (weight 0.5 for this asset type)."
         },
         {
           "name": "EURUSD",
-          "reading": "n/a",
+          "reading": "1.143",
           "points": 0,
           "bias": "neutral",
           "why": "FX effect on EUR-denominated holding (weight 0.3 for this asset type)."
@@ -78,10 +78,60 @@
           "why": "Euro-area stress proxy (weight 0.4 for this asset type)."
         }
       ]
+    },
+    {
+      "key": "outlook",
+      "title": "Macro outlook (trend, last ~1 month)",
+      "score": 1.0,
+      "label": "Supportive",
+      "signals": [
+        {
+          "name": "US 10Y",
+          "reading": "+2.1% over ~21d (rising)",
+          "points": -1,
+          "bias": "caution",
+          "why": "Trend, not a prediction — plain % change over the lookback window (weight 1.0 for this asset type)."
+        },
+        {
+          "name": "VIX",
+          "reading": "-11.0% over ~21d (falling)",
+          "points": 1,
+          "bias": "supportive",
+          "why": "Trend, not a prediction — plain % change over the lookback window (weight 0.7 for this asset type)."
+        },
+        {
+          "name": "GOLD",
+          "reading": "-5.0% over ~21d (falling)",
+          "points": 1,
+          "bias": "supportive",
+          "why": "Trend, not a prediction — plain % change over the lookback window (weight 0.2 for this asset type)."
+        },
+        {
+          "name": "OIL",
+          "reading": "-20.0% over ~21d (falling)",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Trend, not a prediction — plain % change over the lookback window (weight 0.5 for this asset type)."
+        },
+        {
+          "name": "EURUSD",
+          "reading": "-0.9% over ~21d (falling)",
+          "points": 0,
+          "bias": "neutral",
+          "why": "Trend, not a prediction — plain % change over the lookback window (weight 0.3 for this asset type)."
+        },
+        {
+          "name": "BTP BUND",
+          "reading": "n/a",
+          "points": 0,
+          "bias": "neutral",
+          "why": "No historical data available yet for this factor."
+        }
+      ]
     }
   ],
-  "total": -1.0,
-  "summary": "1 supportive signal(s) vs 2 caution signal(s). The board leans toward caution. This is a description of the current state — the decision to hold, add or trim is yours.",
+  "total": 0.0,
+  "summary": "4 supportive signal(s) vs 4 caution signal(s). The board leans balanced. This is a description of the current state — the decision to hold, add or trim is yours.",
   "meta": {
     "asset_name": "BGF Sustainable Energy E2 EUR",
     "nav": 19.44
