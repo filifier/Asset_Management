@@ -43,8 +43,10 @@ valori reali — quel file non viene mai versionato su git (vedi `.gitignore`).
 
 ## I quattro pilastri (in engine/scoring.py)
 
-- **Asset momentum & valuation** — dove sta il prezzo nel range 52 settimane,
-  performance vs benchmark a 1 e 5 anni.
+- **Asset momentum & valuation** — trend NAV a 1 mese, dove sta il prezzo nel
+  range 52 settimane, performance a 1 e 5 anni **vs S&P 500** (proxy di
+  mercato generico, non il benchmark ufficiale del fondo — l'etichetta lo dice
+  esplicitamente per non creare ambiguità su cosa viene confrontato).
 - **Macro context** — il **livello attuale** dei segnali macro (tassi, VIX,
   oro, petrolio, FX) **pesati per quanto contano per QUESTO tipo di asset**.
   Le pesature sono in `ASSET_PROFILES`.
@@ -73,6 +75,24 @@ poi tradotta in supportive/caution tramite `TREND_POLARITY` in
 `engine/scoring.py`, con la stessa logica esplicita usata per il resto del
 motore. Per tassi, gold e oro, petrolio ed EUR/USD non è tracciato ancora un
 proxy storico (BTP-Bund) — resta "n/a" finché non viene collegata una fonte.
+
+## Sezione "Andamento" — grafico e proiezione
+
+Sotto i pillar c'è un grafico (`docs/chart.js`, vanilla JS + SVG, nessuna
+libreria esterna) che sovrappone l'asset ai benchmark/macro selezionati.
+Tutte le serie sono **indicizzate a 100** all'inizio del periodo visibile,
+altrimenti non sarebbero confrontabili (€ vs punti indice vs % vs $). Puoi
+scegliere il periodo (3M/6M/1Y/5Y/All) e quali serie mostrare.
+
+La **proiezione lineare** (checkbox a parte) è una regressione lineare
+semplice (minimi quadrati) calcolata sul NAV del periodo selezionato ed
+estesa in avanti di circa 1/4 della finestra. Mostra sempre l'**R²** — quanto
+bene la retta spiega i dati reali — così quando è basso (spesso lo è, i
+prezzi non sono lineari) si vede subito che la proiezione è debole, invece di
+nasconderlo. Il testo sotto il grafico lo dice esplicitamente: non è una
+previsione, è l'estensione geometrica del trend recente. Stessa filosofia
+"no black-box" del resto del motore — è una retta, la puoi ricalcolare a
+mano da `slope`/`intercept` in `chart.js`.
 
 ## Pubblico vs privato
 
@@ -111,10 +131,13 @@ portfolio_bi/
 │   └── scoring.py              # il motore trasparente: 4 pillar_*, build_scorecard
 │                                # (completo) e build_public_scorecard (senza posizione)
 ├── web/                       # dashboard di sviluppo locale (tutti i pilastri)
+│                                # riusa docs/chart.js e docs/data/*.json
 └── docs/                      # dashboard pubblica (GitHub Pages) + calcolatore
+    ├── chart.js                # grafico + proiezione lineare (vanilla JS/SVG)
     └── data/
         ├── scorecard.json      # output pubblico, senza dati personali
-        └── nav_history.json    # storico NAV del fondo — dato di mercato, pubblico
+        ├── nav_history.json    # storico NAV del fondo — dato di mercato, pubblico
+        └── macro_history.json  # storico benchmark/macro — dato di mercato, pubblico
 ```
 
 ## Prossimi passi — cose da chiedere a Claude Code

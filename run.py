@@ -44,12 +44,14 @@ TRADING_DAYS_1Y = 252
 
 def pct_change_over(history, days_back):
     """history: list of (iso_date, value), oldest first. % change from
-    ~days_back trading days ago to the latest point. None if not enough
-    history — never fabricated."""
+    ~days_back trading days ago to the latest point. None if there isn't
+    actually days_back worth of history — we do NOT silently fall back
+    to the oldest available point, since that would quietly compare
+    against a shorter, misleading window instead of a real failure."""
     values = [v for _, v in history]
-    if len(values) < 2:
+    if len(values) <= days_back:
         return None
-    past = values[max(0, len(values) - 1 - days_back)]
+    past = values[len(values) - 1 - days_back]
     return (values[-1] - past) / past * 100 if past else None
 
 
@@ -222,6 +224,14 @@ def main():
     with open(nav_history_out, "w") as f:
         json.dump(history.get("fund_nav", []), f, separators=(",", ":"))
     print(f"Saved: {nav_history_out}  (public — fund price history, safe to git push)")
+
+    # Benchmark/macro history: same market data already used by the outlook
+    # pillar, published so the dashboard's chart can plot it too.
+    macro_history_out = os.path.join(HERE, "docs", "data", "macro_history.json")
+    with open(macro_history_out, "w") as f:
+        json.dump({k: v for k, v in history.items() if k != "fund_nav"},
+                  f, separators=(",", ":"))
+    print(f"Saved: {macro_history_out}  (public — benchmark price history, safe to git push)")
 
 
 if __name__ == "__main__":

@@ -109,27 +109,31 @@ def pillar_asset(nav: float, low52: float, high52: float,
         p.add(Signal("52-week range", f"{rng*100:.0f}% of range — mid", 0,
                      "neutral", "Sits in the middle of its yearly range."))
 
-    # Short-term relative strength vs benchmark
+    # Short-term relative strength vs benchmark. NOTE: the benchmark here
+    # is the S&P 500 (run.py computes bench_1y/bench_5y from Yahoo's
+    # ^GSPC history) — a broad-market proxy, not this fund's official
+    # benchmark index. Labelled explicitly so it's never ambiguous what
+    # you're actually looking at.
     if ret_1y - bench_1y > 5:
-        p.add(Signal("1y vs benchmark", f"+{ret_1y-bench_1y:.0f}pp ahead", +1,
-                     "supportive", "Beating its benchmark over the last year — momentum is with it."))
+        p.add(Signal("1y vs S&P 500", f"+{ret_1y-bench_1y:.0f}pp ahead", +1,
+                     "supportive", "Beating the S&P 500 over the last year — momentum is with it."))
     elif ret_1y - bench_1y < -5:
-        p.add(Signal("1y vs benchmark", f"{ret_1y-bench_1y:.0f}pp behind", -1,
-                     "caution", "Lagging its benchmark over the last year."))
+        p.add(Signal("1y vs S&P 500", f"{ret_1y-bench_1y:.0f}pp behind", -1,
+                     "caution", "Lagging the S&P 500 over the last year."))
     else:
-        p.add(Signal("1y vs benchmark", "roughly in line", 0, "neutral",
-                     "Tracking its benchmark over the last year."))
+        p.add(Signal("1y vs S&P 500", "roughly in line", 0, "neutral",
+                     "Tracking the S&P 500 over the last year."))
 
     # Long-term relative strength (structural)
     if ret_5y - bench_5y < -10:
-        p.add(Signal("5y vs benchmark", f"{ret_5y-bench_5y:.0f}pp behind", -1,
-                     "caution", "Structurally behind its benchmark over 5 years — recent strength may be cyclical."))
+        p.add(Signal("5y vs S&P 500", f"{ret_5y-bench_5y:.0f}pp behind", -1,
+                     "caution", "Structurally behind the S&P 500 over 5 years — recent strength may be cyclical."))
     elif ret_5y - bench_5y > 10:
-        p.add(Signal("5y vs benchmark", f"+{ret_5y-bench_5y:.0f}pp ahead", +1,
-                     "supportive", "Structurally ahead over 5 years."))
+        p.add(Signal("5y vs S&P 500", f"+{ret_5y-bench_5y:.0f}pp ahead", +1,
+                     "supportive", "Structurally ahead of the S&P 500 over 5 years."))
     else:
-        p.add(Signal("5y vs benchmark", "roughly in line", 0, "neutral",
-                     "In line with its benchmark over 5 years."))
+        p.add(Signal("5y vs S&P 500", "roughly in line", 0, "neutral",
+                     "In line with the S&P 500 over 5 years."))
     return p
 
 
@@ -190,13 +194,13 @@ def pillar_outlook(history: Dict[str, list], profile_key: str,
     key_map = {"oil": "oil_wti"}  # weight keys vs history/fetch keys differ for oil
     for factor, w in weights.items():
         series = history.get(key_map.get(factor, factor))
-        if not series or len(series) < 2:
+        if not series or len(series) <= lookback_days:
             p.add(Signal(factor.replace("_", " ").upper(), "n/a", 0, "neutral",
                          "No historical data available yet for this factor."))
             continue
         closes = [c for _, c in series]
         latest = closes[-1]
-        past = closes[max(0, len(closes) - 1 - lookback_days)]
+        past = closes[len(closes) - 1 - lookback_days]
         if not past:
             continue
         change_pct = (latest - past) / past * 100

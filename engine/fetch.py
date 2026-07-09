@@ -82,11 +82,18 @@ def fetch_fund_nav():
     return latest, as_of, history
 
 
-def fetch_yahoo_chart(symbol, range_="6mo", interval="1d"):
+def fetch_yahoo_chart(symbol, range_="6y", interval="1d"):
     """Return (latest_close, history). history is a list of (iso_date,
     close) tuples, oldest first, gaps (None closes) dropped. On any
     failure, returns (None, []) — same "never fabricate" contract as
-    the rest of this module."""
+    the rest of this module.
+
+    Default range is 6y, not the ~1mo the outlook pillar actually needs,
+    because run.py also uses the S&P 500 series here for the asset
+    pillar's 5-year benchmark comparison — that needs 5 years of history
+    or it silently compares against whatever's oldest in a shorter
+    window (that was a real bug: with the previous 6mo default, "5y vs
+    benchmark" was actually comparing against ~6 months ago)."""
     url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{quote(symbol)}"
            f"?range={range_}&interval={interval}")
     try:

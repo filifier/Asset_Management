@@ -3,8 +3,8 @@
     {
       "key": "asset",
       "title": "Asset momentum & valuation",
-      "score": 1.0,
-      "label": "Supportive",
+      "score": -1.0,
+      "label": "Caution",
       "signals": [
         {
           "name": "NAV trend (~1 month)",
@@ -21,18 +21,18 @@
           "why": "Sits in the middle of its yearly range."
         },
         {
-          "name": "1y vs benchmark",
-          "reading": "+41pp ahead",
+          "name": "1y vs S&P 500",
+          "reading": "+28pp ahead",
           "points": 1,
           "bias": "supportive",
-          "why": "Beating its benchmark over the last year — momentum is with it."
+          "why": "Beating the S&P 500 over the last year — momentum is with it."
         },
         {
-          "name": "5y vs benchmark",
-          "reading": "+37pp ahead",
-          "points": 1,
-          "bias": "supportive",
-          "why": "Structurally ahead over 5 years."
+          "name": "5y vs S&P 500",
+          "reading": "-30pp behind",
+          "points": -1,
+          "bias": "caution",
+          "why": "Structurally behind the S&P 500 over 5 years — recent strength may be cyclical."
         }
       ]
     },
@@ -51,14 +51,14 @@
         },
         {
           "name": "VIX",
-          "reading": "16.9",
+          "reading": "17.0",
           "points": 1,
           "bias": "supportive",
           "why": "Low volatility supports risk assets (weight 0.7 for this asset type)."
         },
         {
           "name": "GOLD",
-          "reading": "$4,115",
+          "reading": "$4,114",
           "points": 0,
           "bias": "neutral",
           "why": "Safe-haven demand proxy (weight 0.2 for this asset type)."
@@ -101,7 +101,7 @@
         },
         {
           "name": "VIX",
-          "reading": "-10.5% over ~21d (falling)",
+          "reading": "-10.3% over ~21d (falling)",
           "points": 1,
           "bias": "supportive",
           "why": "Trend, not a prediction — plain % change over the lookback window (weight 0.7 for this asset type)."
@@ -115,7 +115,7 @@
         },
         {
           "name": "OIL",
-          "reading": "-19.5% over ~21d (falling)",
+          "reading": "-19.4% over ~21d (falling)",
           "points": 0,
           "bias": "neutral",
           "why": "Trend, not a prediction — plain % change over the lookback window (weight 0.5 for this asset type)."
@@ -137,8 +137,8 @@
       ]
     }
   ],
-  "total": 2.0,
-  "summary": "5 supportive signal(s) vs 3 caution signal(s). The board leans supportive. This is a description of the current state — the decision to hold, add or trim is yours.",
+  "total": 0.0,
+  "summary": "4 supportive signal(s) vs 4 caution signal(s). The board leans balanced. This is a description of the current state — the decision to hold, add or trim is yours.",
   "meta": {
     "asset_name": "BGF Sustainable Energy E2 EUR",
     "nav": 18.66

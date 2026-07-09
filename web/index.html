@@ -125,6 +125,34 @@
   }
   .legend span { display: inline-flex; align-items: center; gap: 5px; }
   .legend .mark { flex: 0 0 16px; height: 16px; font-size: 10px; margin-top: 0; }
+
+  .chart-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
+  }
+  .chart-card h2 { font-size: 15px; margin: 0 0 4px; }
+  .chart-controls { display: flex; gap: 6px; margin: 10px 0; }
+  .chart-range-btn {
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    background: var(--neutral-bg); border: 1px solid var(--border);
+    border-radius: 999px; padding: 4px 11px; cursor: pointer;
+  }
+  .chart-range-btn.active { color: var(--ink); background: var(--border); }
+  .chart-range-btn:hover { background: var(--border); }
+  .chart-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 4px; }
+  .chart-legend-item {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; color: var(--muted); cursor: pointer;
+  }
+  .chart-swatch { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+  .chart-svg-holder { margin-top: 10px; }
+  .chart-svg-holder svg { width: 100%; height: auto; display: block; }
+  .private-note {
+    font-size: 12px; color: var(--muted); line-height: 1.4;
+  }
+  #private-placeholder {
+    font-size: 12.5px; color: var(--muted); font-style: italic; margin-top: 8px;
+  }
 </style>
 </head>
 <body>
@@ -141,6 +169,7 @@
   <p class="disclaimer">Uso personale e informativo. Non è consulenza finanziaria.</p>
 </div>
 
+<script src="../docs/chart.js"></script>
 <script>
 const markSymbol = { supportive: "+", caution: "!", neutral: "·" };
 const markLabel = { supportive: "favorevole", caution: "attenzione", neutral: "neutro" };
@@ -216,6 +245,17 @@ function render(card, meta) {
     }
     content.appendChild(el);
   }
+
+  const chartCard = document.createElement("div");
+  chartCard.className = "chart-card";
+  chartCard.innerHTML = `<h2>Andamento</h2>
+    <div class="private-note" style="margin-bottom:0">Tutte le serie sono indicizzate a 100 all'inizio del periodo, per essere confrontabili nonostante unità diverse (€, punti indice, %, $).</div>
+    <div id="chart-container"></div>`;
+  content.appendChild(chartCard);
+  initChartSection(chartCard.querySelector("#chart-container"), {
+    navHistory: "../docs/data/nav_history.json",
+    macroHistory: "../docs/data/macro_history.json",
+  });
 
   const summaryEl = document.createElement("div");
   const leanClass = card.total >= 1 ? "support-lean" : card.total <= -1 ? "caution-lean" : "";
