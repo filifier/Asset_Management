@@ -31,6 +31,13 @@ const SERIES_DEFS = [
 const RANGE_DAYS = { "3M": 63, "6M": 126, "1Y": 252, "5Y": 1260, "Dal 2021": "2021" };
 const HISTORY_FLOOR = "2021-01-01";
 
+// The projection always fits on the last 1Y of NAV data and extends ~3
+// months forward, independent of whichever range the chart itself is
+// showing — a short, recent window is what "if this trend continues"
+// should mean, not "the average trend since 2021".
+const PROJECTION_LOOKBACK_DAYS = 252;
+const PROJECTION_HORIZON_DAYS = 63;
+
 function sliceRange(series, spec) {
   if (!series || !series.length) return [];
   if (spec === "2021") return series.filter(([d]) => d >= HISTORY_FLOOR);
@@ -216,47 +223,47 @@ async function initChartSection(container, sources) {
     }
 
     let projection = null;
-    if (state.showProjection) {
-      const assetSliced = sliceRange(navHistory, days);
-      if (assetSliced.length >= 10) {
-        const reg = linearRegression(assetSliced);
-        const lastDate = assetSliced[assetSliced.length - 1][0];
-        const horizon = Math.max(10, Math.round(assetSliced.length / 4));
-        const lastIdx = assetSliced.length - 1;
-        const projPoints = [];
-        for (let step = 0; step <= horizon; step += Math.max(1, Math.round(horizon / 12))) {
-          const idx = lastIdx + step;
-          const val = reg.slope * idx + reg.intercept;
+    if (state.showProjection && !state.visible.has("asset")) {
+      projNote.textContent = "Attiva la serie \"Asset (NAV)\" per vedere la proiezione.";
+    } else if (state.showProjection) {
+      // Fit is ALWAYS on the last 1Y, regardless of the range selector —
+      // see PROJECTION_LOOKBACK_DAYS.
+      const fitWindow = sliceRange(navHistory, PROJECTION_LOOKBACK_DAYS);
+      if (fitWindow.length >= 10) {
+        const reg = linearRegression(fitWindow);
+        const lastDate = fitWindow[fitWindow.length - 1][0];
+        const lastActual = fitWindow[fitWindow.length - 1][1];
+        // Anchored at the actual last NAV value, not the fitted line's
+        // value there — a straight line fit over a whole year will sit
+        // away from a recent rally/dip, which looked like a disconnected,
+        // "floating" dashed line. Anchoring keeps it visually continuous
+        // with where the solid line actually ends; the slope still comes
+        // from the regression.
+        const projPointsRaw = [];
+        const step_ = Math.max(1, Math.round(PROJECTION_HORIZON_DAYS / 12));
+        for (let step = 0; step <= PROJECTION_HORIZON_DAYS; step += step_) {
           const date = step === 0 ? lastDate : addTradingDays(lastDate, step);
-          projPoints.push([date, val]);
+          const val = lastActual + reg.slope * step;
+          projPointsRaw.push([date, val]);
         }
-        projection = { points: projPoints, color: "#8a8478", r2: reg.r2 };
+        // Rebase using the SAME base as whatever asset series is currently
+        // displayed, so the dashed line lines up with the solid one on
+        // screen no matter which range button is active.
+        const displayedAssetSliced = sliceRange(navHistory, days);
+        const base = displayedAssetSliced.length ? displayedAssetSliced[0][1] : lastActual;
+        const points = projPointsRaw.map(([d, v]) => [d, base ? (v / base) * 100 : v]);
+        projection = { points, color: "#8a8478", r2: reg.r2 };
         projNote.innerHTML =
-          `📐 Proiezione lineare sul NAV, non indicizzato — estende matematicamente il trend ` +
-          `degli ultimi ${state.range} in avanti di circa ${Math.round(horizon * 7 / 5)} giorni. ` +
-          `R² = ${reg.r2.toFixed(2)} (quanto la retta spiega i dati reali: 1.0 = perfetto, valori bassi = ` +
+          `📐 Proiezione lineare sul NAV — ancorata all'ultimo prezzo reale, con la direzione (slope) ` +
+          `stimata sugli ultimi 12 mesi ed estesa in avanti di ~${PROJECTION_HORIZON_DAYS} giorni di trading. ` +
+          `R² = ${reg.r2.toFixed(2)} su 1 anno (quanto la retta spiega i dati reali: 1.0 = perfetto, valori bassi = ` +
           `il prezzo non segue affatto una linea retta). <strong>Non è una previsione affidabile</strong> — ` +
           `i mercati non si muovono in linea retta, è solo l'estensione geometrica del trend recente.`;
       } else {
-        projection = null;
-        projNote.textContent = "Non abbastanza punti nel periodo selezionato per una proiezione.";
+        projNote.textContent = "Non abbastanza dati nell'ultimo anno per una proiezione.";
       }
     } else {
       projNote.textContent = "";
-    }
-
-    // Projection is on raw NAV scale, not rebased-to-100 — keep it on its
-    // own overlay only makes sense when asset is the only/primary series.
-    // To keep the chart's y-axis coherent we only draw the projection
-    // when the asset line itself is visible and rebase the projection
-    // the same way (using the asset's own rebasing factor).
-    if (projection && state.visible.has("asset")) {
-      const assetSliced = sliceRange(navHistory, days);
-      const base = assetSliced[0][1];
-      projection.points = projection.points.map(([d, v]) => [d, base ? (v / base) * 100 : v]);
-    } else {
-      projection = null;
-      if (state.showProjection) projNote.textContent = "Attiva la serie \"Asset (NAV)\" per vedere la proiezione.";
     }
 
     buildChartSVG(svgHolder, seriesData, { projection });

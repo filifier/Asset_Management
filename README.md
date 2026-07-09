@@ -152,31 +152,47 @@ entrano come **variazione di livello** (differenza prima, non %) perché
 possono attraversare lo zero — una "% di rendimento" su uno spread non ha
 senso. Vedi `RATE_LIKE_FACTORS` in `engine/regression.py`.
 
+## Due tab: Dashboard e Analisi & Previsione
+
+La dashboard è divisa in due viste, selezionabili con i pulsanti in alto:
+
+- **Dashboard** — i pillar descrittivi (asset momentum, macro context, macro
+  outlook, la tua posizione) più il riepilogo. Corta e leggibile.
+- **Analisi & Previsione** — il grafico "Andamento" e la tabella della
+  regressione fattoriale, la parte più statistica/matematica, separata così
+  da non appesantire la vista principale.
+
 ## Sezione "Andamento" — grafico e proiezione
 
-Sotto i pillar c'è un grafico (`docs/chart.js`, vanilla JS + SVG, nessuna
-libreria esterna) che sovrappone l'asset ai benchmark/macro selezionati (11
-serie disponibili). Tutte le serie sono **indicizzate a 100** all'inizio del
-periodo visibile, altrimenti non sarebbero confrontabili (€ vs punti indice
-vs % vs $). Puoi scegliere il periodo (3M/6M/1Y/5Y/**Dal 2021**) e quali
-serie mostrare. "Dal 2021" non è un conteggio di giorni come gli altri
-pulsanti: è un'ancora fissa al 2021-01-01, così ogni serie — incluso il NAV
-del fondo, il cui storico grezzo arriva fino al 2005 — parte esattamente
-dalla stessa data invece che "dallo stesso numero di punti fa". È lo stesso
-motivo per cui `engine/fetch.py` scarica tutto da una data fissa
+Nella tab "Analisi & Previsione" c'è un grafico (`docs/chart.js`, vanilla JS
++ SVG, nessuna libreria esterna) che sovrappone l'asset ai benchmark/macro
+selezionati (11 serie disponibili). Tutte le serie sono **indicizzate a
+100** all'inizio del periodo visibile, altrimenti non sarebbero confrontabili
+(€ vs punti indice vs % vs $). Puoi scegliere il periodo (3M/6M/1Y/5Y/**Dal
+2021**) e quali serie mostrare. "Dal 2021" non è un conteggio di giorni come
+gli altri pulsanti: è un'ancora fissa al 2021-01-01, così ogni serie —
+incluso il NAV del fondo, il cui storico grezzo arriva fino al 2005 — parte
+esattamente dalla stessa data invece che "dallo stesso numero di punti fa".
+È lo stesso motivo per cui `engine/fetch.py` scarica tutto da una data fissa
 (`HISTORY_START_DATE`) invece di una finestra scorrevole: esclude
 deliberatamente il crollo/rimbalzo COVID del 2020, che altrimenti
 dominerebbe qualunque trend o regressione.
 
-La **proiezione lineare** (checkbox a parte) è una regressione lineare
-semplice (minimi quadrati) calcolata sul NAV del periodo selezionato ed
-estesa in avanti di circa 1/4 della finestra. Mostra sempre l'**R²** — quanto
-bene la retta spiega i dati reali — così quando è basso (spesso lo è, i
-prezzi non sono lineari) si vede subito che la proiezione è debole, invece di
-nasconderlo. Il testo sotto il grafico lo dice esplicitamente: non è una
-previsione, è l'estensione geometrica del trend recente. Stessa filosofia
-"no black-box" del resto del motore — è una retta, la puoi ricalcolare a
-mano da `slope`/`intercept` in `chart.js`.
+La **proiezione lineare** (checkbox a parte) fitta sempre gli **ultimi 12
+mesi** di NAV (`PROJECTION_LOOKBACK_DAYS` in `chart.js`), indipendentemente
+dal periodo selezionato per il grafico, ed estende ~63 giorni di trading in
+avanti. È **ancorata all'ultimo prezzo reale**, non al valore che la retta
+di regressione avrebbe in quel punto — la prima versione usava il valore
+della retta fittata sull'intero periodo visibile, che su una finestra lunga
+(es. "Dal 2021") poteva restare ben lontana dall'ultimo prezzo reale dopo un
+rally o un crollo recente, risultando in una linea tratteggiata "staccata" e
+fuorviante. Ancorare all'ultimo prezzo e usare solo lo *slope* della
+regressione per la direzione risolve il problema restando comunque
+un'estensione geometrica trasparente, non un modello diverso. Mostra sempre
+l'**R²** (sul fit a 1 anno) — quanto bene la retta spiega i dati reali — così
+quando è basso si vede subito che la proiezione è debole, invece di
+nasconderlo. Stessa filosofia "no black-box" del resto del motore — è una
+retta, la puoi ricalcolare a mano da `slope`/`intercept` in `chart.js`.
 
 ## Pubblico vs privato
 

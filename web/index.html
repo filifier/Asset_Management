@@ -153,6 +153,36 @@
   #private-placeholder {
     font-size: 12.5px; color: var(--muted); font-style: italic; margin-top: 8px;
   }
+
+  .view-tabs {
+    display: flex; gap: 6px; margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .view-tab-btn {
+    font-size: 13.5px; font-weight: 600; color: var(--muted);
+    background: none; border: none; border-bottom: 2px solid transparent;
+    padding: 8px 4px; margin-bottom: -1px; cursor: pointer;
+  }
+  .view-tab-btn.active { color: var(--ink); border-bottom-color: var(--support); }
+  .view-tab-btn:hover { color: var(--ink); }
+
+  .reg-table-wrap { overflow-x: auto; margin-top: 10px; }
+  .reg-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .reg-table th, .reg-table td {
+    text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .reg-table th { color: var(--muted); font-weight: 600; font-size: 11.5px; }
+  .reg-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .reg-table tr.sig-pos td.factor-name { color: var(--support); }
+  .reg-table tr.sig-neg td.factor-name { color: var(--caution); }
+  .reg-badge {
+    display: inline-block; font-size: 10.5px; font-weight: 700;
+    padding: 1px 6px; border-radius: 999px;
+  }
+  .reg-badge.yes { color: var(--support); background: var(--support-bg); }
+  .reg-badge.no { color: var(--muted); background: var(--neutral-bg); }
+  .reg-badge.vif-high { color: var(--caution); background: var(--caution-bg); }
 </style>
 </head>
 <body>
@@ -164,7 +194,14 @@
 
   <div id="loading">Caricamento scorecard…</div>
   <div id="error"></div>
+
+  <div class="view-tabs" id="view-tabs" style="display:none">
+    <button type="button" class="view-tab-btn active" data-view="dashboard">Dashboard</button>
+    <button type="button" class="view-tab-btn" data-view="analysis">Analisi &amp; Previsione</button>
+  </div>
+
   <div id="content"></div>
+  <div id="analysis-content" style="display:none"></div>
 
   <p class="disclaimer">Uso personale e informativo. Non è consulenza finanziaria.</p>
 </div>
@@ -220,6 +257,7 @@ function render(card, meta) {
   content.appendChild(legend);
 
   for (const p of card.pillars) {
+    if (p.key === "factor_regression") continue; // shown in the "Analisi & Previsione" tab instead
     const el = document.createElement("div");
     el.className = "pillar";
     const bClass = badgeClass(p.score);
@@ -246,22 +284,102 @@ function render(card, meta) {
     content.appendChild(el);
   }
 
-  const chartCard = document.createElement("div");
-  chartCard.className = "chart-card";
-  chartCard.innerHTML = `<h2>Andamento</h2>
-    <div class="private-note" style="margin-bottom:0">Tutte le serie sono indicizzate a 100 all'inizio del periodo, per essere confrontabili nonostante unità diverse (€, punti indice, %, $).</div>
-    <div id="chart-container"></div>`;
-  content.appendChild(chartCard);
-  initChartSection(chartCard.querySelector("#chart-container"), {
-    navHistory: "../docs/data/nav_history.json",
-    macroHistory: "../docs/data/macro_history.json",
-  });
-
   const summaryEl = document.createElement("div");
   const leanClass = card.total >= 1 ? "support-lean" : card.total <= -1 ? "caution-lean" : "";
   summaryEl.className = `summary ${leanClass}`;
   summaryEl.textContent = card.summary;
   content.appendChild(summaryEl);
+
+  renderAnalysisTab(card);
+}
+
+// Parses the factor_regression pillar's existing signal text back into a
+// clean table — no backend schema change needed, the "reading"/"why"
+// strings already contain everything (see engine/scoring.py
+// pillar_factor_regression, which writes them in this exact format).
+function parseFactorSignal(s) {
+  const readingMatch = s.reading.match(/coef=([+-][\d.]+), p=([\d.]+)/);
+  const vifMatch = s.why.match(/VIF=([\d.]+)/);
+  return {
+    name: s.name,
+    coef: readingMatch ? parseFloat(readingMatch[1]) : null,
+    pvalue: readingMatch ? parseFloat(readingMatch[2]) : null,
+    vif: vifMatch ? parseFloat(vifMatch[1]) : null,
+    significant: s.bias !== "neutral",
+    bias: s.bias,
+  };
+}
+
+function renderAnalysisTab(card) {
+  const el = document.getElementById("analysis-content");
+  el.innerHTML = "";
+
+  const chartCard = document.createElement("div");
+  chartCard.className = "chart-card";
+  chartCard.innerHTML = `<h2>Andamento e proiezione</h2>
+    <div class="private-note" style="margin-bottom:0">Tutte le serie sono indicizzate a 100 all'inizio del periodo, per essere confrontabili nonostante unità diverse (€, punti indice, %, $).</div>
+    <div id="chart-container"></div>`;
+  el.appendChild(chartCard);
+  initChartSection(chartCard.querySelector("#chart-container"), {
+    navHistory: "../docs/data/nav_history.json",
+    macroHistory: "../docs/data/macro_history.json",
+  });
+
+  const regPillar = card.pillars.find(p => p.key === "factor_regression");
+  const regCard = document.createElement("div");
+  regCard.className = "chart-card";
+  if (!regPillar || !regPillar.signals.length) {
+    regCard.innerHTML = `<h2>Analisi fattoriale (regressione OLS)</h2>
+      <div class="private-note">Dati insufficienti per stimare il modello.</div>`;
+    el.appendChild(regCard);
+    return;
+  }
+
+  const [fitSignal, ...factorSignals] = regPillar.signals;
+  const factors = factorSignals.map(parseFactorSignal);
+
+  const rows = factors.map(f => {
+    const sigBadge = f.significant
+      ? `<span class="reg-badge yes">sì (p&lt;0.05)</span>`
+      : `<span class="reg-badge no">no</span>`;
+    const vifBadge = f.vif == null ? "—" :
+      f.vif >= 10 ? `<span class="reg-badge vif-high">${f.vif.toFixed(1)} alto</span>` :
+      f.vif.toFixed(1);
+    const rowClass = f.significant ? (f.coef > 0 ? "sig-pos" : "sig-neg") : "";
+    return `<tr class="${rowClass}">
+      <td class="factor-name">${f.name}</td>
+      <td class="num">${f.coef != null ? f.coef.toFixed(3) : "—"}</td>
+      <td class="num">${f.pvalue != null ? f.pvalue.toFixed(3) : "—"}</td>
+      <td>${sigBadge}</td>
+      <td class="num">${vifBadge}</td>
+    </tr>`;
+  }).join("");
+
+  regCard.innerHTML = `
+    <h2>Analisi fattoriale (regressione OLS)</h2>
+    <div class="private-note">${fitSignal.reading} — ${fitSignal.why}</div>
+    <div class="reg-table-wrap">
+      <table class="reg-table">
+        <thead><tr>
+          <th>Fattore</th><th>Coefficiente</th><th>p-value</th><th>Significativo</th><th>VIF</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="private-note" style="margin-top:10px">
+      Sensibilità storica del rendimento dell'asset a ciascun fattore. Verde/rosso = relazione
+      statisticamente significativa (p&lt;0.05) positiva/negativa. VIF alto (&gt;10) = il coefficiente
+      è poco affidabile per collinearità con un altro fattore nel modello. Non è una previsione.
+    </div>
+  `;
+  el.appendChild(regCard);
+}
+
+function switchView(view) {
+  document.getElementById("content").style.display = view === "dashboard" ? "block" : "none";
+  document.getElementById("analysis-content").style.display = view === "analysis" ? "block" : "none";
+  document.querySelectorAll(".view-tab-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.view === view));
 }
 
 async function load() {
@@ -290,12 +408,16 @@ async function load() {
     loading.style.display = "none";
     render(card, { assetName: card.meta.asset_name, nav: card.meta.nav, loadedAt: new Date() });
     document.getElementById("refresh-btn").addEventListener("click", load);
+    document.getElementById("view-tabs").style.display = "flex";
   } catch (e) {
     loading.style.display = "none";
     err.style.display = "block";
     err.textContent = e.message;
   }
 }
+document.querySelectorAll(".view-tab-btn").forEach(b =>
+  b.addEventListener("click", () => switchView(b.dataset.view))
+);
 load();
 </script>
 </body>
