@@ -1,13 +1,13 @@
 {
-  "_comment": "Copia questo file in position.json e metti i tuoi valori reali. position.json non viene versionato su git.",
+  "_comment": "Copia questo file in position.json e metti i tuoi valori reali. position.json non viene versionato su git. purchase_date: giorno in cui hai comprato (YYYY-MM-DD) — il motore trova da solo il NAV di quel giorno (o del trading day precedente) e calcola quante unità implicite e quanto vale oggi.",
   "portfolio_value_eur": 50000,
   "holdings": [
     {
       "name": "BGF Sustainable Energy E2 EUR",
       "isin": "LU0171290074",
       "profile_key": "clean_energy_equity",
-      "units": 100,
-      "avg_cost": 15.00
+      "invested_amount_eur": 1500,
+      "purchase_date": "2024-03-15"
     }
   ]
 }

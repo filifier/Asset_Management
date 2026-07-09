@@ -19,6 +19,7 @@ Run:  python run.py
 import os
 import json
 import sys
+import datetime as dt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -50,6 +51,24 @@ def pct_change_over(history, days_back):
         return None
     past = values[max(0, len(values) - 1 - days_back)]
     return (values[-1] - past) / past * 100 if past else None
+
+
+def nav_on_or_before(history, date_iso):
+    """Find the closest NAV on or before date_iso (handles weekends/
+    holidays by snapping back to the last trading day). history: list
+    of (iso_date, value), oldest first. Returns (matched_date, value),
+    or (None, None) if date_iso is malformed or predates all history."""
+    try:
+        dt.date.fromisoformat(date_iso)
+    except (ValueError, TypeError):
+        return None, None
+    match = None
+    for d, v in history:
+        if d <= date_iso:
+            match = (d, v)
+        else:
+            break
+    return match if match else (None, None)
 
 
 def nav_range_and_returns(nav_history, bench_history):
@@ -142,6 +161,14 @@ def main():
     asset_inputs["nav"] = nav
     nav_trend_1m = pct_change_over(history.get("fund_nav", []), 21)
 
+    # Your position: units are never entered directly — they're implied by
+    # invested_amount / NAV on the purchase date, looked up from history.
+    purchase_date, purchase_nav = nav_on_or_before(
+        history.get("fund_nav", []), holding["purchase_date"])
+    if purchase_nav is None:
+        print(f"\n  ! no NAV history at/before {holding['purchase_date']} — "
+              f"position pillar will show 'not entered'")
+
     inputs = {
         "profile_key": holding["profile_key"],
         "asset": asset_inputs,
@@ -149,8 +176,8 @@ def main():
         "macro": macro,
         "macro_history": history,
         "position": {
-            "units": holding["units"],
-            "avg_cost": holding["avg_cost"],
+            "invested_amount": holding["invested_amount_eur"],
+            "purchase_nav": purchase_nav,
             "nav": nav,
             "portfolio_value": position["portfolio_value_eur"],
         },
@@ -186,6 +213,15 @@ def main():
     with open(public_out, "w") as f:
         json.dump(public_card, f, indent=2, ensure_ascii=False)
     print(f"Saved: {public_out}  (public — no personal data, safe to git push)")
+
+    # Fund NAV history: market data (the fund's own price over time), not
+    # personal — safe to publish. Lets the public dashboard's private
+    # calculator turn (invested amount, purchase date) into a value
+    # entirely in the browser, without needing your real position here.
+    nav_history_out = os.path.join(HERE, "docs", "data", "nav_history.json")
+    with open(nav_history_out, "w") as f:
+        json.dump(history.get("fund_nav", []), f, separators=(",", ":"))
+    print(f"Saved: {nav_history_out}  (public — fund price history, safe to git push)")
 
 
 if __name__ == "__main__":

@@ -76,22 +76,24 @@ proxy storico (BTP-Bund) — resta "n/a" finché non viene collegata una fonte.
 
 ## Pubblico vs privato
 
-Il pilastro "Your position" contiene i tuoi numeri reali (unità, prezzo medio,
+Il pilastro "Your position" contiene i tuoi numeri reali (importo investito,
 valore portafoglio) — dati che non vuoi finiscano in un repository pubblico.
 Per questo:
 
-- `docs/` è la dashboard **pubblica**: mostra solo asset momentum e macro
-  context (dati di mercato, nessun dato tuo). È quella che pubblichi su GitHub
-  Pages.
+- `docs/` è la dashboard **pubblica**: mostra asset momentum, macro context e
+  macro outlook (dati di mercato, nessun dato tuo), più `docs/data/nav_history.json`
+  — lo storico del NAV del fondo, anche questo dato di mercato pubblico. È
+  quella che pubblichi su GitHub Pages.
 - Nella dashboard pubblica c'è comunque una sezione **"La tua posizione
   (privata)"**: un piccolo form dove chiunque (anche tu, sul tuo dispositivo)
-  può inserire units/prezzo medio/valore portafoglio. Il calcolo di P&L e
-  concentrazione avviene **interamente nel browser**, in JavaScript — non
-  viene mai inviato a un server né salvato nel repository. Se spunti "ricorda",
-  resta solo nel `localStorage` del tuo browser.
-- `web/` è la dashboard di **sviluppo locale**: mostra tutti e tre i pilastri
-  usando i dati reali da `data/position.json`, comoda per uso personale sul
-  tuo Mac.
+  inserisce **importo investito e data di acquisto** — non le unità. Il
+  browser cerca da solo il NAV di quel giorno nello storico pubblico
+  (`nav_history.json`) e calcola P&L e concentrazione, **interamente in
+  JavaScript** — non viene mai inviato a un server né salvato nel repository.
+  Se spunti "ricorda", resta solo nel `localStorage` del tuo browser.
+- `web/` è la dashboard di **sviluppo locale**: mostra tutti e quattro i
+  pilastri usando i dati reali da `data/position.json`, comoda per uso
+  personale sul tuo Mac.
 
 ## Struttura
 
@@ -110,7 +112,9 @@ portfolio_bi/
 │                                # (completo) e build_public_scorecard (senza posizione)
 ├── web/                       # dashboard di sviluppo locale (tutti i pilastri)
 └── docs/                      # dashboard pubblica (GitHub Pages) + calcolatore
-    └── data/scorecard.json     # output pubblico, senza dati personali
+    └── data/
+        ├── scorecard.json      # output pubblico, senza dati personali
+        └── nav_history.json    # storico NAV del fondo — dato di mercato, pubblico
 ```
 
 ## Prossimi passi — cose da chiedere a Claude Code
@@ -138,12 +142,19 @@ fatto) e metti i tuoi valori reali — resta locale, non viene versionato:
       "name": "BGF Sustainable Energy E2 EUR",
       "isin": "LU0171290074",
       "profile_key": "clean_energy_equity",
-      "units": 100,
-      "avg_cost": 15.00
+      "invested_amount_eur": 1500,
+      "purchase_date": "2024-03-15"
     }
   ]
 }
 ```
+
+Niente `units`/`avg_cost` da calcolare a mano: `invested_amount_eur` è quanto
+hai messo in totale, `purchase_date` è il giorno in cui l'hai comprato
+(`YYYY-MM-DD`). `run.py` cerca da solo il NAV di quel giorno (o del trading
+day precedente, se cade nel weekend) nello storico BlackRock, e da lì ricava
+quante unità implicite possiedi e quanto valgono oggi — stessa identica
+logica usata dal calcolatore privato nella dashboard pubblica.
 
 ## Importante
 

@@ -220,17 +220,24 @@ def pillar_outlook(history: Dict[str, list], profile_key: str,
 
 
 # ── PILLAR 3: YOUR POSITION ─────────────────────────────────────────
-def pillar_position(units: float, avg_cost: float, nav: float,
+def pillar_position(invested_amount: float, purchase_nav: float, nav: float,
                     portfolio_value: float) -> Pillar:
+    """
+    invested_amount: how much you put in, in your reporting currency.
+    purchase_nav: the fund's NAV on (or nearest trading day before) your
+      purchase date — looked up from history by the caller (run.py's
+      nav_on_or_before, or the browser's equivalent for the public
+      dashboard's private calculator). Units are never asked for
+      directly: they're implied by invested_amount / purchase_nav.
+    """
     p = Pillar("position", "Your position")
-    if units <= 0 or avg_cost <= 0:
+    if invested_amount <= 0 or not purchase_nav or purchase_nav <= 0:
         p.add(Signal("Position", "not entered", 0, "neutral",
-                     "Enter your units and average cost to activate this pillar."))
+                     "Enter your invested amount and purchase date to activate this pillar."))
         return p
 
-    cost_basis = units * avg_cost
-    market_value = units * nav
-    pnl_pct = (market_value - cost_basis) / cost_basis * 100
+    market_value = invested_amount * nav / purchase_nav
+    pnl_pct = (market_value - invested_amount) / invested_amount * 100
 
     # Unrealised P&L state (a big gain is a profit-taker's note, not a verdict)
     if pnl_pct >= 25:

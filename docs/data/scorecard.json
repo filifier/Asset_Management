@@ -65,7 +65,7 @@
         },
         {
           "name": "OIL",
-          "reading": "$73",
+          "reading": "$74",
           "points": 0,
           "bias": "neutral",
           "why": "Energy-complex linkage, mixed effect (weight 0.5 for this asset type)."
@@ -101,7 +101,7 @@
         },
         {
           "name": "VIX",
-          "reading": "-10.9% over ~21d (falling)",
+          "reading": "-10.5% over ~21d (falling)",
           "points": 1,
           "bias": "supportive",
           "why": "Trend, not a prediction — plain % change over the lookback window (weight 0.7 for this asset type)."
@@ -115,7 +115,7 @@
         },
         {
           "name": "OIL",
-          "reading": "-19.6% over ~21d (falling)",
+          "reading": "-19.5% over ~21d (falling)",
           "points": 0,
           "bias": "neutral",
           "why": "Trend, not a prediction — plain % change over the lookback window (weight 0.5 for this asset type)."

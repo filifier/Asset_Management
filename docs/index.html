@@ -187,13 +187,29 @@ const pillarLabel = (score) =>
 let currentNav = null;
 const STORAGE_KEY = "portfolioBI_position";
 
+let navHistory = [];  // [[isoDate, nav], ...] oldest first — public fund price history
+
+// Mirrors run.py::nav_on_or_before — snaps back to the last trading day
+// on/before dateIso (handles weekends/holidays). Returns null if dateIso
+// is malformed or predates all available history.
+function navOnOrBefore(history, dateIso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateIso || "")) return null;
+  let match = null;
+  for (const [d, v] of history) {
+    if (d <= dateIso) match = v;
+    else break;
+  }
+  return match;
+}
+
 // Mirrors engine/scoring.py::pillar_position — computed here, in the
 // visitor's own browser, so personal figures never leave the device.
-function computePositionSignals(units, avgCost, nav, portfolioValue) {
-  if (!(units > 0) || !(avgCost > 0)) return null;
-  const costBasis = units * avgCost;
-  const marketValue = units * nav;
-  const pnlPct = (marketValue - costBasis) / costBasis * 100;
+// Units are never asked for directly: they're implied by
+// investedAmount / purchaseNav (the fund's NAV on the purchase date).
+function computePositionSignals(investedAmount, purchaseNav, nav, portfolioValue) {
+  if (!(investedAmount > 0) || !(purchaseNav > 0)) return null;
+  const marketValue = investedAmount * nav / purchaseNav;
+  const pnlPct = (marketValue - investedAmount) / investedAmount * 100;
 
   const signals = [];
   if (pnlPct >= 25) {
@@ -226,11 +242,15 @@ function computePositionSignals(units, avgCost, nav, portfolioValue) {
 function buildPrivateSection() {
   const el = document.createElement("div");
   el.className = "private";
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const earliest = navHistory.length ? navHistory[0][0] : null;
   el.innerHTML = `
     <div class="private-head"><h2>La tua posizione (privata)</h2></div>
     <div class="private-note">
       🔒 Calcolato nel tuo browser — questi valori non vengono mai salvati sul
       server né inviati da nessuna parte. Restano solo su questo dispositivo.
+      Non chiediamo le unità: bastano importo investito e data di acquisto,
+      il NAV di quel giorno viene letto dallo storico pubblico del fondo.
     </div>
     <div class="private-form">
       <div>
@@ -238,12 +258,12 @@ function buildPrivateSection() {
         <input id="pf-value" type="number" min="0" step="any" placeholder="es. 50000">
       </div>
       <div>
-        <label for="pf-units">Unità possedute</label>
-        <input id="pf-units" type="number" min="0" step="any" placeholder="es. 100">
+        <label for="pf-amount">Importo investito (€)</label>
+        <input id="pf-amount" type="number" min="0" step="any" placeholder="es. 1500">
       </div>
       <div>
-        <label for="pf-cost">Prezzo medio (€)</label>
-        <input id="pf-cost" type="number" min="0" step="any" placeholder="es. 15.00">
+        <label for="pf-date">Data di acquisto</label>
+        <input id="pf-date" type="date" ${earliest ? `min="${earliest}"` : ""} max="${todayIso}">
       </div>
     </div>
     <label class="remember-row">
@@ -254,23 +274,36 @@ function buildPrivateSection() {
   `;
 
   const valueInput = el.querySelector("#pf-value");
-  const unitsInput = el.querySelector("#pf-units");
-  const costInput = el.querySelector("#pf-cost");
+  const amountInput = el.querySelector("#pf-amount");
+  const dateInput = el.querySelector("#pf-date");
   const rememberInput = el.querySelector("#pf-remember");
   const resultsEl = el.querySelector("#private-results");
   const headEl = el.querySelector(".private-head");
 
   function renderResults() {
     const portfolioValue = parseFloat(valueInput.value);
-    const units = parseFloat(unitsInput.value);
-    const avgCost = parseFloat(costInput.value);
-    const signals = currentNav != null ? computePositionSignals(units, avgCost, currentNav, portfolioValue) : null;
+    const investedAmount = parseFloat(amountInput.value);
+    const purchaseDate = dateInput.value;
 
     document.getElementById("private-badge")?.remove();
-    if (!signals) {
-      resultsEl.innerHTML = `<div id="private-placeholder">Inserisci i tuoi dati per vedere qui P&L e concentrazione — calcolo istantaneo, nessun invio.</div>`;
+
+    if (!(investedAmount > 0) || !purchaseDate) {
+      resultsEl.innerHTML = `<div id="private-placeholder">Inserisci importo e data di acquisto per vedere qui P&L e concentrazione — calcolo istantaneo, nessun invio.</div>`;
       return;
     }
+    if (!navHistory.length) {
+      resultsEl.innerHTML = `<div id="private-placeholder">Storico NAV non disponibile in questo momento — riprova più tardi.</div>`;
+      return;
+    }
+    const purchaseNav = navOnOrBefore(navHistory, purchaseDate);
+    if (purchaseNav == null) {
+      resultsEl.innerHTML = `<div id="private-placeholder">Nessun dato NAV per quella data (lo storico parte dal ${earliest}) — prova con un'altra data.</div>`;
+      return;
+    }
+
+    const signals = currentNav != null ? computePositionSignals(investedAmount, purchaseNav, currentNav, portfolioValue) : null;
+    if (!signals) return;
+
     const score = signals.reduce((sum, s) => sum + s.points, 0);
     const badge = document.createElement("span");
     badge.id = "private-badge";
@@ -279,7 +312,7 @@ function buildPrivateSection() {
     badge.textContent = `${pillarLabel(score)} (${score >= 0 ? "+" : ""}${score.toFixed(1)})`;
     headEl.querySelector("h2").after(badge);
 
-    resultsEl.innerHTML = "";
+    resultsEl.innerHTML = `<div class="private-note" style="margin:0 0 10px">NAV al ${purchaseDate}: €${purchaseNav.toFixed(2)}</div>`;
     for (const s of signals) {
       const row = document.createElement("div");
       row.className = "signal";
@@ -297,14 +330,14 @@ function buildPrivateSection() {
   function persistIfWanted() {
     if (rememberInput.checked) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        portfolioValue: valueInput.value, units: unitsInput.value, avgCost: costInput.value,
+        portfolioValue: valueInput.value, investedAmount: amountInput.value, purchaseDate: dateInput.value,
       }));
     } else {
       localStorage.removeItem(STORAGE_KEY);
     }
   }
 
-  [valueInput, unitsInput, costInput].forEach(inp =>
+  [valueInput, amountInput, dateInput].forEach(inp =>
     inp.addEventListener("input", () => { renderResults(); persistIfWanted(); })
   );
   rememberInput.addEventListener("change", persistIfWanted);
@@ -314,8 +347,8 @@ function buildPrivateSection() {
     try {
       const d = JSON.parse(saved);
       valueInput.value = d.portfolioValue || "";
-      unitsInput.value = d.units || "";
-      costInput.value = d.avgCost || "";
+      amountInput.value = d.investedAmount || "";
+      dateInput.value = d.purchaseDate || "";
       rememberInput.checked = true;
     } catch (e) { /* ignore malformed local data */ }
   }
@@ -410,9 +443,13 @@ async function load() {
   if (btn) btn.disabled = true;
 
   try {
-    const cardRes = await fetch("data/scorecard.json", { cache: "no-store" });
+    const [cardRes, navHistRes] = await Promise.all([
+      fetch("data/scorecard.json", { cache: "no-store" }),
+      fetch("data/nav_history.json", { cache: "no-store" }),
+    ]);
     if (!cardRes.ok) throw new Error("scorecard.json non trovato nel repo.");
     const card = await cardRes.json();
+    navHistory = navHistRes.ok ? await navHistRes.json() : [];
     loading.style.display = "none";
     currentNav = card.meta.nav;
     render(card, { assetName: card.meta.asset_name, nav: card.meta.nav, loadedAt: new Date() });
