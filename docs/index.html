@@ -151,6 +151,76 @@
   }
   #private-results { margin-top: 12px; }
   #private-results .signal:first-child { border-top: 1px solid var(--border); }
+
+  .search-wrap { position: relative; margin-bottom: 12px; }
+  .search-wrap label {
+    display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 4px;
+  }
+  .search-wrap input {
+    width: 100%; font-size: 13.5px; padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--bg); color: var(--ink); box-sizing: border-box;
+  }
+  .search-wrap input:focus { outline: 2px solid var(--support); outline-offset: 1px; }
+  .search-dropdown {
+    position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; z-index: 10;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    max-height: 260px; overflow-y: auto; box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+  }
+  .search-result {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--border);
+  }
+  .search-result:last-child { border-bottom: none; }
+  .search-result:hover { background: var(--neutral-bg); }
+  .search-result .sr-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .search-result .sr-meta { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .search-empty { padding: 12px; font-size: 12.5px; color: var(--muted); font-style: italic; }
+
+  .selected-chip {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--support-bg); border: 1px solid var(--support);
+    border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px;
+  }
+  .selected-chip .sc-name { font-weight: 600; color: var(--support); }
+  .selected-chip .sc-meta { color: var(--muted); font-size: 11.5px; margin-left: 6px; }
+  .selected-chip button {
+    background: none; border: none; color: var(--muted); font-size: 12px;
+    cursor: pointer; font-weight: 600; text-decoration: underline;
+  }
+
+  .add-holding-form {
+    display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end;
+    margin-bottom: 14px;
+  }
+  .add-holding-form label {
+    display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 4px;
+  }
+  .add-holding-form input {
+    width: 100%; font-size: 13.5px; padding: 7px 9px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--bg); color: var(--ink); box-sizing: border-box;
+  }
+  #add-holding-btn {
+    font-size: 13px; font-weight: 600; color: #fff; background: var(--support);
+    border: none; border-radius: 8px; padding: 8px 16px; cursor: pointer; white-space: nowrap;
+  }
+  #add-holding-btn:disabled { opacity: 0.5; cursor: default; }
+
+  .holdings-list { margin-bottom: 14px; }
+  .holding-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 9px 0; border-top: 1px solid var(--border); gap: 10px;
+  }
+  .holding-row .hr-name { font-size: 13px; font-weight: 600; }
+  .holding-row .hr-meta { font-size: 11.5px; color: var(--muted); }
+  .holding-row .hr-pnl { font-size: 13px; font-weight: 700; white-space: nowrap; }
+  .holding-row .hr-pnl.positive { color: var(--support); }
+  .holding-row .hr-pnl.negative { color: var(--caution); }
+  .holding-row .hr-remove {
+    background: none; border: none; color: var(--muted); font-size: 16px;
+    cursor: pointer; padding: 0 4px; line-height: 1;
+  }
+  .holding-row .hr-remove:hover { color: var(--caution); }
+
   #private-placeholder {
     font-size: 12.5px; color: var(--muted); font-style: italic; margin-top: 8px;
   }
@@ -236,6 +306,7 @@
 </div>
 
 <script src="chart.js"></script>
+<script src="ols.js"></script>
 <script>
 const markSymbol = { supportive: "+", caution: "!", neutral: "·" };
 const markLabel = { supportive: "favorevole", caution: "attenzione", neutral: "neutro" };
@@ -251,6 +322,7 @@ const pillarLabel = (score) =>
   score > -1.5 ? "Caution" : "Strong caution";
 
 let currentNav = null;
+let latestCard = null;  // last-loaded scorecard, so the Analysis tab can re-render on portfolio change
 const STORAGE_KEY = "portfolioBI_position";
 
 let navHistory = [];  // [[isoDate, nav], ...] oldest first — public fund price history
@@ -268,107 +340,310 @@ function navOnOrBefore(history, dateIso) {
   return match;
 }
 
-// Mirrors engine/scoring.py::pillar_position — computed here, in the
-// visitor's own browser, so personal figures never leave the device.
-// Units are never asked for directly: they're implied by
-// investedAmount / purchaseNav (the fund's NAV on the purchase date).
-function computePositionSignals(investedAmount, purchaseNav, nav, portfolioValue) {
-  if (!(investedAmount > 0) || !(purchaseNav > 0)) return null;
-  const marketValue = investedAmount * nav / purchaseNav;
-  const pnlPct = (marketValue - investedAmount) / investedAmount * 100;
+// Mirrors engine/scoring.py::pillar_position_multi — computed here, in
+// the visitor's own browser, so personal figures never leave the
+// device. Units are never asked for directly: implied by
+// investedAmount / purchasePrice (the security's price on the purchase
+// date, looked up from its pre-published history — see
+// docs/data/tickers/*.json, generated by build_ticker_universe.py).
+function computePortfolioSignals(holdings, portfolioValue) {
+  const priced = holdings.filter(h => h.purchasePrice > 0 && h.currentPrice > 0);
+  if (!priced.length) return null;
+
+  const perHolding = priced.map(h => {
+    const marketValue = h.investedAmount * h.currentPrice / h.purchasePrice;
+    const pnlPct = (marketValue - h.investedAmount) / h.investedAmount * 100;
+    return { ...h, marketValue, pnlPct };
+  });
+
+  const totalInvested = perHolding.reduce((s, h) => s + h.investedAmount, 0);
+  const totalValue = perHolding.reduce((s, h) => s + h.marketValue, 0);
+  const totalPnlPct = totalInvested ? (totalValue - totalInvested) / totalInvested * 100 : 0;
 
   const signals = [];
-  if (pnlPct >= 25) {
-    signals.push({ name: "Unrealised P&L", reading: `+${pnlPct.toFixed(0)}%`, points: -1,
-      bias: "caution", why: "Sitting on a sizeable gain — a profit-taker would note the cushion." });
-  } else if (pnlPct <= -15) {
-    signals.push({ name: "Unrealised P&L", reading: `${pnlPct.toFixed(0)}%`, points: 0,
-      bias: "neutral", why: "Underwater — decision hinges on whether your original thesis still holds." });
+  if (totalPnlPct >= 25) {
+    signals.push({ name: "Portfolio P&L (tracked holdings)", reading: `+${totalPnlPct.toFixed(0)}%`, points: -1,
+      bias: "caution", why: "Sitting on a sizeable gain across your tracked holdings — a profit-taker would note the cushion." });
+  } else if (totalPnlPct <= -15) {
+    signals.push({ name: "Portfolio P&L (tracked holdings)", reading: `${totalPnlPct.toFixed(0)}%`, points: 0,
+      bias: "neutral", why: "Underwater overall — decision hinges on whether your original thesis still holds." });
   } else {
-    signals.push({ name: "Unrealised P&L", reading: `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(0)}%`,
-      points: 0, bias: "neutral", why: "P&L is in a moderate range." });
+    signals.push({ name: "Portfolio P&L (tracked holdings)", reading: `${totalPnlPct >= 0 ? "+" : ""}${totalPnlPct.toFixed(0)}%`,
+      points: 0, bias: "neutral", why: "P&L is in a moderate range across your tracked holdings." });
   }
 
-  if (portfolioValue > 0) {
-    const conc = marketValue / portfolioValue * 100;
-    if (conc >= 30) {
-      signals.push({ name: "Concentration", reading: `${conc.toFixed(0)}% of portfolio`, points: -1,
-        bias: "caution", why: "This single holding is a large share of your portfolio — concentration risk." });
-    } else if (conc <= 10) {
-      signals.push({ name: "Concentration", reading: `${conc.toFixed(0)}% of portfolio`, points: 1,
-        bias: "supportive", why: "A modest share of your portfolio — room to size up if conviction is high." });
-    } else {
-      signals.push({ name: "Concentration", reading: `${conc.toFixed(0)}% of portfolio`, points: 0,
-        bias: "neutral", why: "A moderate share of your portfolio." });
+  for (const h of perHolding) {
+    signals.push({ name: `${h.name} — P&L`, reading: `${h.pnlPct >= 0 ? "+" : ""}${h.pnlPct.toFixed(0)}%`,
+      points: 0, bias: "neutral", why: "Per-holding unrealised P&L — informational, doesn't add to the score." });
+    if (portfolioValue > 0) {
+      const conc = h.marketValue / portfolioValue * 100;
+      if (conc >= 30) {
+        signals.push({ name: `${h.name} — Concentration`, reading: `${conc.toFixed(0)}% of portfolio`, points: -1,
+          bias: "caution", why: "A large share of your declared portfolio value — concentration risk." });
+      } else if (conc <= 10) {
+        signals.push({ name: `${h.name} — Concentration`, reading: `${conc.toFixed(0)}% of portfolio`, points: 1,
+          bias: "supportive", why: "A modest share of your declared portfolio value — room to size up if conviction is high." });
+      } else {
+        signals.push({ name: `${h.name} — Concentration`, reading: `${conc.toFixed(0)}% of portfolio`, points: 0,
+          bias: "neutral", why: "A moderate share of your declared portfolio value." });
+      }
     }
   }
   return signals;
+}
+
+let tickerList = [];
+const tickerHistoryCache = {};
+
+async function loadTickerList() {
+  if (tickerList.length) return tickerList;
+  tickerList = (await fetchJSON("data/ticker_list.json")) || [];
+  return tickerList;
+}
+
+function searchTickers(query, limit = 8) {
+  const q = query.trim().toLowerCase();
+  if (q.length < 2) return [];
+  // Rank: exact ticker > ticker starts-with > name starts-with > name contains.
+  // Keeps "Apple Inc." (AAPL) above "Apple Hospitality REIT" when typing "apple".
+  const scored = [];
+  for (const t of tickerList) {
+    const sym = t.symbol.toLowerCase(), name = t.name.toLowerCase();
+    let score = null;
+    if (sym === q) score = 0;
+    else if (sym.startsWith(q)) score = 1;
+    else if (name.startsWith(q)) score = 2;
+    else if (name.includes(q) || sym.includes(q)) score = 3;
+    if (score !== null) scored.push({ t, score });
+  }
+  // Tiebreak within the same match-quality by shorter name — "Apple Inc."
+  // beats "Apple Hospitality REIT, Inc." as the more prominent match.
+  scored.sort((a, b) => a.score - b.score || a.t.name.length - b.t.name.length
+                        || a.t.name.localeCompare(b.t.name));
+  return scored.slice(0, limit).map(s => s.t);
+}
+
+async function getTickerHistory(symbol) {
+  if (tickerHistoryCache[symbol]) return tickerHistoryCache[symbol];
+  const data = (await fetchJSON(`data/tickers/${encodeURIComponent(symbol)}.json`)) || [];
+  tickerHistoryCache[symbol] = data;
+  return data;
+}
+
+// Portfolio state lives entirely in the browser (localStorage under
+// STORAGE_KEY when "remember" is on). Each holding: {symbol, name,
+// exchange, investedAmount, purchaseDate}. Prices/history are looked up
+// on demand from the pre-published per-ticker files.
+let portfolioState = { portfolioValue: "", holdings: [], remember: false };
+
+function persistPortfolio() {
+  if (portfolioState.remember) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolioState));
+  } else {
+    localStorage.removeItem(STORAGE_KEY);
+  }
 }
 
 function buildPrivateSection() {
   const el = document.createElement("div");
   el.className = "private";
   const todayIso = new Date().toISOString().slice(0, 10);
-  const earliest = navHistory.length ? navHistory[0][0] : null;
+
   el.innerHTML = `
-    <div class="private-head"><h2>La tua posizione (privata)</h2></div>
+    <div class="private-head"><h2>Il tuo portafoglio (privato)</h2></div>
     <div class="private-note">
       🔒 Calcolato nel tuo browser — questi valori non vengono mai salvati sul
       server né inviati da nessuna parte. Restano solo su questo dispositivo.
-      Non chiediamo le unità: bastano importo investito e data di acquisto,
-      il NAV di quel giorno viene letto dallo storico pubblico del fondo.
+      Cerca un titolo o ETF per nome o ticker, scegli la data d'acquisto, e vedi
+      la performance. Non servono le unità: bastano importo e data.
     </div>
-    <div class="private-form">
+
+    <div class="private-form" style="grid-template-columns:1fr; margin-bottom:14px">
       <div>
-        <label for="pf-value">Valore portafoglio (€)</label>
+        <label for="pf-value">Valore totale del portafoglio (€)</label>
         <input id="pf-value" type="number" min="0" step="any" placeholder="es. 50000">
       </div>
-      <div>
-        <label for="pf-amount">Importo investito (€)</label>
-        <input id="pf-amount" type="number" min="0" step="any" placeholder="es. 1500">
-      </div>
-      <div>
-        <label for="pf-date">Data di acquisto</label>
-        <input id="pf-date" type="date" ${earliest ? `min="${earliest}"` : ""} max="${todayIso}">
-      </div>
     </div>
+
+    <div class="search-wrap">
+      <label for="pf-search">Aggiungi una posizione — cerca titolo o ETF</label>
+      <input id="pf-search" type="text" autocomplete="off" placeholder="es. Apple, VWCE, Microsoft…">
+      <div id="pf-dropdown" class="search-dropdown" style="display:none"></div>
+    </div>
+
+    <div id="pf-selected"></div>
+
+    <div class="holdings-list" id="pf-holdings"></div>
+
     <label class="remember-row">
       <input type="checkbox" id="pf-remember">
-      Ricorda questi valori solo su questo dispositivo
+      Ricorda il portafoglio solo su questo dispositivo
     </label>
     <div id="private-results"></div>
   `;
 
   const valueInput = el.querySelector("#pf-value");
-  const amountInput = el.querySelector("#pf-amount");
-  const dateInput = el.querySelector("#pf-date");
+  const searchInput = el.querySelector("#pf-search");
+  const dropdown = el.querySelector("#pf-dropdown");
+  const selectedBox = el.querySelector("#pf-selected");
+  const holdingsBox = el.querySelector("#pf-holdings");
   const rememberInput = el.querySelector("#pf-remember");
   const resultsEl = el.querySelector("#private-results");
   const headEl = el.querySelector(".private-head");
 
-  function renderResults() {
-    const portfolioValue = parseFloat(valueInput.value);
-    const investedAmount = parseFloat(amountInput.value);
-    const purchaseDate = dateInput.value;
+  let pendingPick = null; // the ticker chosen but not yet confirmed with a date
 
+  // ---- search dropdown ----
+  searchInput.addEventListener("input", () => {
+    const matches = searchTickers(searchInput.value);
+    if (!matches.length) {
+      dropdown.style.display = searchInput.value.trim().length >= 2 ? "block" : "none";
+      if (searchInput.value.trim().length >= 2) {
+        dropdown.innerHTML = `<div class="search-empty">Nessun titolo trovato nella lista. (La ricerca copre i titoli/ETF più comuni.)</div>`;
+      }
+      return;
+    }
+    dropdown.style.display = "block";
+    dropdown.innerHTML = matches.map(m => `
+      <div class="search-result" data-symbol="${m.symbol}">
+        <span class="sr-name">${m.name}</span>
+        <span class="sr-meta">${m.symbol} · ${m.exchange}</span>
+      </div>
+    `).join("");
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!el.contains(e.target)) dropdown.style.display = "none";
+  });
+
+  dropdown.addEventListener("click", (e) => {
+    const row = e.target.closest(".search-result");
+    if (!row) return;
+    const symbol = row.dataset.symbol;
+    const meta = tickerList.find(t => t.symbol === symbol);
+    pendingPick = meta;
+    dropdown.style.display = "none";
+    searchInput.value = "";
+    renderPending();
+  });
+
+  // ---- confirm step: chosen ticker + amount + date ----
+  function renderPending() {
+    if (!pendingPick) { selectedBox.innerHTML = ""; return; }
+    selectedBox.innerHTML = `
+      <div class="selected-chip">
+        <span><span class="sc-name">${pendingPick.name}</span><span class="sc-meta">${pendingPick.symbol} · ${pendingPick.exchange}</span></span>
+        <button type="button" id="pf-cancel-pick">annulla</button>
+      </div>
+      <div class="add-holding-form">
+        <div>
+          <label for="pf-amount">Importo investito (€)</label>
+          <input id="pf-amount" type="number" min="0" step="any" placeholder="es. 1500">
+        </div>
+        <div>
+          <label for="pf-date">Data di acquisto</label>
+          <input id="pf-date" type="date" max="${todayIso}">
+        </div>
+        <button type="button" id="add-holding-btn" disabled>Aggiungi</button>
+      </div>
+      <div id="pf-add-note" class="private-note" style="margin:0"></div>
+    `;
+    const amountInput = selectedBox.querySelector("#pf-amount");
+    const dateInput = selectedBox.querySelector("#pf-date");
+    const addBtn = selectedBox.querySelector("#add-holding-btn");
+    const addNote = selectedBox.querySelector("#pf-add-note");
+
+    function validate() {
+      const amt = parseFloat(amountInput.value);
+      const date = dateInput.value;
+      addBtn.disabled = !(amt > 0 && date);
+    }
+    amountInput.addEventListener("input", validate);
+    dateInput.addEventListener("input", validate);
+
+    selectedBox.querySelector("#pf-cancel-pick").addEventListener("click", () => {
+      pendingPick = null; renderPending();
+    });
+
+    addBtn.addEventListener("click", async () => {
+      const amt = parseFloat(amountInput.value);
+      const date = dateInput.value;
+      addNote.textContent = "Verifico lo storico prezzi…";
+      const hist = await getTickerHistory(pendingPick.symbol);
+      if (!hist.length) {
+        addNote.textContent = "Storico prezzi non disponibile per questo titolo — riprova più tardi.";
+        return;
+      }
+      const earliest = hist[0][0];
+      if (date < earliest) {
+        addNote.textContent = `Lo storico di ${pendingPick.symbol} parte dal ${earliest} — scegli una data successiva.`;
+        return;
+      }
+      portfolioState.holdings.push({
+        symbol: pendingPick.symbol, name: pendingPick.name, exchange: pendingPick.exchange,
+        investedAmount: amt, purchaseDate: date,
+      });
+      pendingPick = null;
+      renderPending();
+      persistPortfolio();
+      await renderHoldings();
+      if (latestCard) renderAnalysisTab(latestCard);  // per-asset regression + chart follow the portfolio
+    });
+
+    validate();
+  }
+
+  // ---- holdings list + performance ----
+  async function renderHoldings() {
     document.getElementById("private-badge")?.remove();
 
-    if (!(investedAmount > 0) || !purchaseDate) {
-      resultsEl.innerHTML = `<div id="private-placeholder">Inserisci importo e data di acquisto per vedere qui P&L e concentrazione — calcolo istantaneo, nessun invio.</div>`;
-      return;
-    }
-    if (!navHistory.length) {
-      resultsEl.innerHTML = `<div id="private-placeholder">Storico NAV non disponibile in questo momento — riprova più tardi.</div>`;
-      return;
-    }
-    const purchaseNav = navOnOrBefore(navHistory, purchaseDate);
-    if (purchaseNav == null) {
-      resultsEl.innerHTML = `<div id="private-placeholder">Nessun dato NAV per quella data (lo storico parte dal ${earliest}) — prova con un'altra data.</div>`;
+    if (!portfolioState.holdings.length) {
+      holdingsBox.innerHTML = "";
+      resultsEl.innerHTML = `<div id="private-placeholder">Aggiungi almeno una posizione per vedere qui la performance del tuo portafoglio.</div>`;
       return;
     }
 
-    const signals = currentNav != null ? computePositionSignals(investedAmount, purchaseNav, currentNav, portfolioValue) : null;
-    if (!signals) return;
+    // resolve each holding's purchase & current price from its history
+    const enriched = [];
+    for (const h of portfolioState.holdings) {
+      const hist = await getTickerHistory(h.symbol);
+      const purchasePrice = navOnOrBefore(hist, h.purchaseDate);
+      const currentPrice = hist.length ? hist[hist.length - 1][1] : null;
+      enriched.push({ ...h, purchasePrice, currentPrice });
+    }
+
+    holdingsBox.innerHTML = enriched.map((h, i) => {
+      const priced = h.purchasePrice > 0 && h.currentPrice > 0;
+      const pnl = priced ? (h.currentPrice / h.purchasePrice - 1) * 100 : null;
+      const pnlStr = pnl == null ? "n/d" : `${pnl >= 0 ? "+" : ""}${pnl.toFixed(0)}%`;
+      const pnlClass = pnl == null ? "" : (pnl >= 0 ? "positive" : "negative");
+      return `<div class="holding-row">
+        <div>
+          <div class="hr-name">${h.name}</div>
+          <div class="hr-meta">${h.symbol} · €${h.investedAmount.toLocaleString("it-IT")} · dal ${h.purchaseDate}</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px">
+          <span class="hr-pnl ${pnlClass}">${pnlStr}</span>
+          <button type="button" class="hr-remove" data-idx="${i}" title="Rimuovi">×</button>
+        </div>
+      </div>`;
+    }).join("");
+
+    holdingsBox.querySelectorAll(".hr-remove").forEach(btn => {
+      btn.addEventListener("click", () => {
+        portfolioState.holdings.splice(parseInt(btn.dataset.idx), 1);
+        persistPortfolio();
+        renderHoldings();
+        if (latestCard) renderAnalysisTab(latestCard);  // keep the Analysis tab in sync
+      });
+    });
+
+    const portfolioValue = parseFloat(valueInput.value);
+    const signals = computePortfolioSignals(enriched, portfolioValue);
+    if (!signals) {
+      resultsEl.innerHTML = `<div id="private-placeholder">Nessuna posizione con prezzo valido — controlla le date d'acquisto.</div>`;
+      return;
+    }
 
     const score = signals.reduce((sum, s) => sum + s.points, 0);
     const badge = document.createElement("span");
@@ -378,7 +653,7 @@ function buildPrivateSection() {
     badge.textContent = `${pillarLabel(score)} (${score >= 0 ? "+" : ""}${score.toFixed(1)})`;
     headEl.querySelector("h2").after(badge);
 
-    resultsEl.innerHTML = `<div class="private-note" style="margin:0 0 10px">NAV al ${purchaseDate}: €${purchaseNav.toFixed(2)}</div>`;
+    resultsEl.innerHTML = "";
     for (const s of signals) {
       const row = document.createElement("div");
       row.className = "signal";
@@ -393,32 +668,31 @@ function buildPrivateSection() {
     }
   }
 
-  function persistIfWanted() {
-    if (rememberInput.checked) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        portfolioValue: valueInput.value, investedAmount: amountInput.value, purchaseDate: dateInput.value,
-      }));
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }
+  valueInput.addEventListener("input", () => {
+    portfolioState.portfolioValue = valueInput.value;
+    persistPortfolio();
+    renderHoldings();
+  });
+  rememberInput.addEventListener("change", () => {
+    portfolioState.remember = rememberInput.checked;
+    persistPortfolio();
+  });
 
-  [valueInput, amountInput, dateInput].forEach(inp =>
-    inp.addEventListener("input", () => { renderResults(); persistIfWanted(); })
-  );
-  rememberInput.addEventListener("change", persistIfWanted);
-
+  // ---- restore saved state ----
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
     try {
       const d = JSON.parse(saved);
-      valueInput.value = d.portfolioValue || "";
-      amountInput.value = d.investedAmount || "";
-      dateInput.value = d.purchaseDate || "";
+      portfolioState = {
+        portfolioValue: d.portfolioValue || "",
+        holdings: Array.isArray(d.holdings) ? d.holdings : [],
+        remember: true,
+      };
+      valueInput.value = portfolioState.portfolioValue;
       rememberInput.checked = true;
     } catch (e) { /* ignore malformed local data */ }
   }
-  renderResults();
+  renderHoldings();
 
   return el;
 }
@@ -519,69 +793,141 @@ function parseFactorSignal(s) {
   };
 }
 
-function renderAnalysisTab(card) {
-  const el = document.getElementById("analysis-content");
-  el.innerHTML = "";
-
-  const chartCard = document.createElement("div");
-  chartCard.className = "chart-card";
-  chartCard.innerHTML = `<h2>Andamento e proiezione</h2>
-    <div class="private-note" style="margin-bottom:0">Tutte le serie sono indicizzate a 100 all'inizio del periodo, per essere confrontabili nonostante unità diverse (€, punti indice, %, $).</div>
-    <div id="chart-container"></div>`;
-  el.appendChild(chartCard);
-  initChartSection(chartCard.querySelector("#chart-container"), {
-    navHistory: "data/nav_history.json",
-    macroHistory: "data/macro_history.json",
-  });
-
-  const regPillar = card.pillars.find(p => p.key === "factor_regression");
-  const regCard = document.createElement("div");
-  regCard.className = "chart-card";
-  if (!regPillar || !regPillar.signals.length) {
-    regCard.innerHTML = `<h2>Analisi fattoriale (regressione OLS)</h2>
-      <div class="private-note">Dati insufficienti per stimare il modello.</div>`;
-    el.appendChild(regCard);
-    return;
-  }
-
-  const [fitSignal, ...factorSignals] = regPillar.signals;
-  const factors = factorSignals.map(parseFactorSignal);
-
-  const rows = factors.map(f => {
-    const sigBadge = f.significant
+// Builds the coef/p-value/VIF table body from a factors object of the
+// shape {key: {coef, pvalue, vif}} — used both by the static
+// (scorecard-derived) table and the live per-asset browser regressions.
+function regressionTableRows(factors) {
+  return Object.entries(factors).map(([key, f]) => {
+    const label = (typeof OLS_FACTOR_LABELS !== "undefined" && OLS_FACTOR_LABELS[key]) || key;
+    const significant = f.pvalue != null && f.pvalue < 0.05;
+    const sigBadge = significant
       ? `<span class="reg-badge yes">sì (p&lt;0.05)</span>`
       : `<span class="reg-badge no">no</span>`;
     const vifBadge = f.vif == null ? "—" :
       f.vif >= 10 ? `<span class="reg-badge vif-high">${f.vif.toFixed(1)} alto</span>` :
       f.vif.toFixed(1);
-    const rowClass = f.significant ? (f.coef > 0 ? "sig-pos" : "sig-neg") : "";
+    const rowClass = significant ? (f.coef > 0 ? "sig-pos" : "sig-neg") : "";
     return `<tr class="${rowClass}">
-      <td class="factor-name">${f.name}</td>
+      <td class="factor-name">${label}</td>
       <td class="num">${f.coef != null ? f.coef.toFixed(3) : "—"}</td>
       <td class="num">${f.pvalue != null ? f.pvalue.toFixed(3) : "—"}</td>
       <td>${sigBadge}</td>
       <td class="num">${vifBadge}</td>
     </tr>`;
   }).join("");
+}
 
-  regCard.innerHTML = `
-    <h2>Analisi fattoriale (regressione OLS)</h2>
-    <div class="private-note">${fitSignal.reading} — ${fitSignal.why}</div>
+function regressionTableCard(title, narrative, subtitle, factors) {
+  const card = document.createElement("div");
+  card.className = "chart-card";
+  card.innerHTML = `
+    <h2>${title}</h2>
+    ${narrative ? `<div class="private-note" style="font-weight:600;color:var(--ink)">${narrative}</div>` : ""}
+    ${subtitle ? `<div class="private-note">${subtitle}</div>` : ""}
     <div class="reg-table-wrap">
       <table class="reg-table">
         <thead><tr>
           <th>Fattore</th><th>Coefficiente</th><th>p-value</th><th>Significativo</th><th>VIF</th>
         </tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody>${regressionTableRows(factors)}</tbody>
       </table>
     </div>
     <div class="private-note" style="margin-top:10px">
-      Sensibilità storica del rendimento dell'asset a ciascun fattore. Verde/rosso = relazione
-      statisticamente significativa (p&lt;0.05) positiva/negativa. VIF alto (&gt;10) = il coefficiente
-      è poco affidabile per collinearità con un altro fattore nel modello. Non è una previsione.
+      Sensibilità storica del rendimento giornaliero dell'asset a ciascun fattore. Verde/rosso =
+      relazione statisticamente significativa (p&lt;0.05) positiva/negativa. VIF alto (&gt;10) = il
+      coefficiente è poco affidabile per collinearità con un altro fattore. Non è una previsione.
     </div>
   `;
-  el.appendChild(regCard);
+  return card;
+}
+
+// Parse the static portfolio-level regression out of scorecard.json's
+// factor_regression pillar (fallback when the user hasn't built a
+// browser portfolio).
+function staticRegressionFromCard(card) {
+  const regPillar = card.pillars.find(p => p.key === "factor_regression");
+  if (!regPillar || regPillar.signals.length < 2) return null;
+  const factorSignals = regPillar.signals.filter(s => /coef=/.test(s.reading));
+  if (!factorSignals.length) return null;
+  const factors = {};
+  for (const s of factorSignals) {
+    const p = parseFactorSignal(s);
+    factors[s.name] = { coef: p.coef, pvalue: p.pvalue, vif: p.vif };
+  }
+  const fit = regPillar.signals.find(s => /R²/.test(s.reading));
+  return { factors, fitLine: fit ? fit.reading : "" };
+}
+
+let analysisMacroHistory = null;
+
+async function renderAnalysisTab(card) {
+  latestCard = card;
+  const el = document.getElementById("analysis-content");
+  el.innerHTML = `<div class="chart-card"><div id="private-placeholder">Preparazione analisi…</div></div>`;
+
+  if (!analysisMacroHistory) {
+    analysisMacroHistory = await fetchJSON("data/macro_history.json");
+  }
+
+  // resolve the user's selected portfolio assets (from the browser) into
+  // {key, label, history} for the chart + per-asset regressions
+  const picked = [];
+  for (const h of portfolioState.holdings) {
+    const hist = await getTickerHistory(h.symbol);
+    if (hist && hist.length) picked.push({ key: h.symbol, label: h.name, history: hist });
+  }
+
+  el.innerHTML = "";
+
+  // ── chart ──
+  const chartCard = document.createElement("div");
+  chartCard.className = "chart-card";
+  chartCard.innerHTML = `<h2>Andamento e proiezione</h2>
+    <div class="private-note" style="margin-bottom:0">Tutte le serie sono indicizzate a 100 all'inizio del periodo, per essere confrontabili nonostante unità diverse (€, punti indice, %, $).${picked.length ? " Le linee asset sono i titoli del tuo portafoglio." : ""}</div>
+    <div id="chart-container"></div>`;
+  el.appendChild(chartCard);
+  initChartSection(chartCard.querySelector("#chart-container"), {
+    navHistory: "data/nav_history.json",
+    macroHistory: "data/macro_history.json",
+    extraSeries: picked,
+  });
+
+  // ── regression(s) ──
+  if (picked.length && analysisMacroHistory) {
+    const intro = document.createElement("div");
+    intro.className = "private-note";
+    intro.style.margin = "4px 0 0";
+    intro.innerHTML = `<strong>Una regressione OLS per ogni titolo del tuo portafoglio</strong> — quanto impatto ha storicamente ogni fattore macro sul suo rendimento giornaliero. Calcolata nel tuo browser sui dati pubblicati, aggiornata quando cambi il portafoglio.`;
+    el.appendChild(intro);
+
+    for (const asset of picked) {
+      const result = runAssetRegression(asset.history, analysisMacroHistory);
+      if (result.error) {
+        const c = document.createElement("div");
+        c.className = "chart-card";
+        c.innerHTML = `<h2>${asset.label}</h2><div class="private-note">${result.error}</div>`;
+        el.appendChild(c);
+        continue;
+      }
+      const narrative = regressionNarrative(result, asset.label);
+      const subtitle = `Regressione OLS sui rendimenti giornalieri — R²=${result.r2.toFixed(2)} (adj. ${result.adjR2.toFixed(2)}), n=${result.n}. R² modesto è normale: i mercati non sono spiegati bene da un modello lineare.`;
+      el.appendChild(regressionTableCard(`${asset.label} — analisi fattoriale`, narrative, subtitle, result.factors));
+    }
+    return;
+  }
+
+  // ── fallback: static portfolio-level regression from scorecard.json ──
+  const stat = staticRegressionFromCard(card);
+  if (stat) {
+    const subtitle = `${stat.fitLine} — modello sul portafoglio definito lato server. Aggiungi titoli nella tab "Dashboard" per una regressione dedicata per ogni tuo asset.`;
+    el.appendChild(regressionTableCard("Analisi fattoriale (regressione OLS)", null, subtitle, stat.factors));
+  } else {
+    const c = document.createElement("div");
+    c.className = "chart-card";
+    c.innerHTML = `<h2>Analisi fattoriale (regressione OLS)</h2>
+      <div class="private-note">Aggiungi almeno un titolo al tuo portafoglio nella tab "Dashboard" per vedere qui una regressione OLS dedicata per ciascun asset.</div>`;
+    el.appendChild(c);
+  }
 }
 
 function switchView(view) {
@@ -604,6 +950,7 @@ async function load() {
     const [cardRes, navHistRes] = await Promise.all([
       fetch("data/scorecard.json", { cache: "no-store" }),
       fetch("data/nav_history.json", { cache: "no-store" }),
+      loadTickerList(),  // preload the searchable universe for the portfolio input
     ]);
     if (!cardRes.ok) throw new Error("scorecard.json non trovato nel repo.");
     const card = await cardRes.json();

@@ -2,16 +2,12 @@
 """
 run.py — the entry point. Ties everything together:
 
-  1. Load your position (data/position.json)
-  2. Fetch live data (engine/fetch.py) — with graceful fallback
-  3. Translate raw market data into asset-relative macro signals
+  1. Load your position (data/position.json) — one or more holdings
+  2. Fetch live data for each holding + macro benchmarks (engine/fetch.py)
+  3. Build one "Asset momentum" pillar per holding, plus portfolio-level
+     macro/outlook/factor-regression/position pillars
   4. Run the transparent scoring engine (engine/scoring.py)
   5. Print a clear BI scorecard to the console (and save JSON)
-
-This is the skeleton. In Claude Code you can ask it to:
-  • add an HTML front-end that renders the scorecard,
-  • add more assets to position.json and profiles to scoring.py,
-  • wire in a scheduler, etc.
 
 Run:  python run.py
 """
@@ -24,20 +20,7 @@ import datetime as dt
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from engine import fetch, scoring
-
-
-# Fallback only — used if the live NAV/benchmark history fetch fails.
-# Normally low52/high52/ret_1y/ret_5y/bench_1y/bench_5y are all computed
-# live in nav_range_and_returns() below, from BlackRock's own NAV history
-# and Yahoo's S&P 500 history. Update "last_known_nav" by hand only if
-# you want a specific fallback; it's otherwise unused while fetches work.
-FUND_REFERENCE = {
-    "low52": 12.86, "high52": 20.04,
-    "ret_1y": 54.67, "bench_1y": 26.73,
-    "ret_5y": 55.77, "bench_5y": 80.18,
-    "last_known_nav": 19.44,
-}
+from engine import fetch, scoring, regression
 
 TRADING_DAYS_1Y = 252
 
@@ -56,7 +39,7 @@ def pct_change_over(history, days_back):
 
 
 def nav_on_or_before(history, date_iso):
-    """Find the closest NAV on or before date_iso (handles weekends/
+    """Find the closest price on or before date_iso (handles weekends/
     holidays by snapping back to the last trading day). history: list
     of (iso_date, value), oldest first. Returns (matched_date, value),
     or (None, None) if date_iso is malformed or predates all history."""
@@ -73,18 +56,19 @@ def nav_on_or_before(history, date_iso):
     return match if match else (None, None)
 
 
-def nav_range_and_returns(nav_history, bench_history):
-    """Compute the fund's 52-week range and 1y/5y returns (fund + S&P
-    500 benchmark) directly from historical series, so these numbers
-    self-update instead of needing to be edited by hand."""
-    window = [v for _, v in nav_history[-TRADING_DAYS_1Y:]]
+def nav_range_and_returns(price_history, bench_history):
+    """Compute a holding's 52-week range and 1y/5y returns (holding +
+    S&P 500 benchmark) directly from historical series. Returns a dict
+    with None values for anything that can't be computed yet (e.g. a
+    holding held for under a year) — never a fabricated number."""
+    window = [v for _, v in price_history[-TRADING_DAYS_1Y:]]
     low52 = min(window) if window else None
     high52 = max(window) if window else None
     return {
         "low52": low52,
         "high52": high52,
-        "ret_1y": pct_change_over(nav_history, TRADING_DAYS_1Y),
-        "ret_5y": pct_change_over(nav_history, TRADING_DAYS_1Y * 5),
+        "ret_1y": pct_change_over(price_history, TRADING_DAYS_1Y),
+        "ret_5y": pct_change_over(price_history, TRADING_DAYS_1Y * 5),
         "bench_1y": pct_change_over(bench_history, TRADING_DAYS_1Y),
         "bench_5y": pct_change_over(bench_history, TRADING_DAYS_1Y * 5),
     }
@@ -98,13 +82,6 @@ def macro_from_market(market: dict) -> dict:
     NOTE: these thresholds are explicit and editable — that's the
     whole point. You can see and change every rule.
     """
-    def bias_from(value, low_good, high_bad, invert=False):
-        if value is None:
-            return 0
-        if invert:  # higher = worse
-            return -1 if value >= high_bad else (1 if value <= low_good else 0)
-        return 1 if value >= low_good else (-1 if value <= high_bad else 0)
-
     m = {}
     # US 10Y: higher yields = headwind for long-duration growth
     y = market.get("us_10y")
@@ -146,52 +123,87 @@ def main():
 
     with open(os.path.join(HERE, "data", "position.json")) as f:
         position = json.load(f)
+    holdings = position["holdings"]
+    portfolio_value = position["portfolio_value_eur"]
 
     market, history = fetch.fetch_all()
-    nav = market.get("fund_nav") or FUND_REFERENCE["last_known_nav"]
-    if not market.get("fund_nav"):
-        print(f"\n  (NAV fetch failed — using last known {nav})")
-
-    holding = position["holdings"][0]
+    holdings_data = fetch.fetch_holdings(holdings)
     macro = macro_from_market(market)
 
-    # Live-computed from history where possible; fall back to the last
-    # hand-maintained reference for any figure history can't produce yet
-    # (e.g. first run, or fetch failure).
-    live = nav_range_and_returns(history.get("fund_nav", []), history.get("sp500", []))
-    asset_inputs = {k: (v if v is not None else FUND_REFERENCE[k]) for k, v in live.items()}
-    asset_inputs["nav"] = nav
-    nav_trend_1m = pct_change_over(history.get("fund_nav", []), 21)
+    priced_holdings = []       # for the position pillar
+    asset_pillars = []         # one "Asset momentum" pillar per holding
+    holdings_histories = {}    # for the portfolio-level regression
 
-    # Your position: units are never entered directly — they're implied by
-    # invested_amount / NAV on the purchase date, looked up from history.
-    purchase_date, purchase_nav = nav_on_or_before(
-        history.get("fund_nav", []), holding["purchase_date"])
-    if purchase_nav is None:
-        print(f"\n  ! no NAV history at/before {holding['purchase_date']} — "
-              f"position pillar will show 'not entered'")
+    for h in holdings:
+        name = h["name"]
+        hd = holdings_data[name]
+        price, hist = hd["price"], hd["history"]
 
-    inputs = {
-        "profile_key": holding["profile_key"],
-        "asset": asset_inputs,
-        "asset_nav_trend_1m": nav_trend_1m,
-        "asset_nav_history": history.get("fund_nav", []),
-        "macro": macro,
-        "macro_history": history,
-        "position": {
-            "invested_amount": holding["invested_amount_eur"],
-            "purchase_nav": purchase_nav,
-            "nav": nav,
-            "portfolio_value": position["portfolio_value_eur"],
-        },
+        if not price or not hist:
+            print(f"\n  ! no price for {name} — excluded from position & regression")
+            priced_holdings.append({"name": name, "invested_amount": h["invested_amount_eur"],
+                                    "market_value": None})
+            continue
+
+        holdings_histories[name] = hist
+        purchase_date, purchase_price = nav_on_or_before(hist, h["purchase_date"])
+        market_value = h["invested_amount_eur"] * price / purchase_price if purchase_price else None
+        if market_value is None:
+            print(f"\n  ! no price history at/before {h['purchase_date']} for {name} — "
+                  f"position pillar will exclude it")
+        priced_holdings.append({"name": name, "invested_amount": h["invested_amount_eur"],
+                                "market_value": market_value})
+
+        live = nav_range_and_returns(hist, history.get("sp500", []))
+        if all(v is not None for v in live.values()):
+            nav_trend_1m = pct_change_over(hist, 21)
+            pillar = scoring.pillar_asset(**live, nav=price, nav_trend_1m=nav_trend_1m)
+            pillar.title = f"{pillar.title} — {name}"
+            asset_pillars.append(pillar)
+        else:
+            print(f"  (not enough history yet for {name}'s momentum pillar — needs ~5y for full stats)")
+
+    total_value = sum(h["market_value"] for h in priced_holdings if h["market_value"])
+    weights = {h["name"]: (h["market_value"] / total_value if h["market_value"] and total_value else 0)
+              for h in priced_holdings}
+
+    # Macro/outlook weighting uses the FIRST holding's asset profile.
+    # Simplification: with multiple holdings of different profile_keys,
+    # a proper blended view would weight each profile's macro_weights by
+    # portfolio share — not built yet, flagged here rather than silently
+    # picking one and calling it done.
+    primary_profile = holdings[0]["profile_key"]
+    macro_pillar = scoring.pillar_macro(macro, primary_profile)
+    outlook_pillar = scoring.pillar_outlook(history, primary_profile)
+
+    # Portfolio-level regression: Y = today's-weights portfolio return,
+    # not any single holding's. See regression.build_portfolio_nav's
+    # docstring for the "current weights applied retroactively" caveat.
+    # If nothing is priced yet (e.g. purchase_date still a placeholder),
+    # every weight is 0 and a portfolio series is meaningless — skip it
+    # explicitly rather than feeding in a degenerate all-zero series.
+    if total_value:
+        portfolio_nav = regression.build_portfolio_nav(holdings_histories, weights)
+    else:
+        portfolio_nav = []
+        print("\n  ! no holding has a valid purchase price yet — factor regression "
+              "pillar will show 'not available' until at least one does")
+    factor_pillar = scoring.pillar_factor_regression(portfolio_nav, history)
+
+    position_pillar = scoring.pillar_position_multi(priced_holdings, portfolio_value)
+
+    pillars_full = asset_pillars + [macro_pillar, outlook_pillar, factor_pillar, position_pillar]
+    pillars_public = asset_pillars + [macro_pillar, outlook_pillar, factor_pillar]
+
+    card = scoring.build_scorecard_from_pillars(pillars_full)
+    card["meta"] = {
+        "asset_name": " + ".join(h["name"] for h in holdings) if len(holdings) > 1 else holdings[0]["name"],
+        "nav": holdings_data[holdings[0]["name"]]["price"],
+        "holdings_count": len(holdings),
     }
 
-    card = scoring.build_scorecard(inputs)
-    card["meta"] = {"asset_name": holding["name"], "nav": nav}
-
     # ---- print ----
-    print(f"\nAsset: {holding['name']}")
-    print(f"NAV used: €{nav}\n")
+    print(f"\nPortafoglio: {card['meta']['asset_name']} ({len(holdings)} posizion{'e' if len(holdings)==1 else 'i'})\n")
     for p in card["pillars"]:
         print(f"■ {p['title']}: {p['label']} (score {p['score']:+.1f})")
         for s in p["signals"]:
@@ -207,31 +219,27 @@ def main():
         json.dump(card, f, indent=2, ensure_ascii=False)
     print(f"\nSaved: {out}  (full — local only, contains your position)")
 
-    # Public scorecard: asset + macro only, no position/portfolio data.
-    # This is the one that's safe to commit and publish via GitHub Pages.
-    public_card = scoring.build_public_scorecard(inputs)
-    public_card["meta"] = {"asset_name": holding["name"], "nav": nav}
+    # Public scorecard: no position/portfolio data. Safe to publish.
+    public_card = scoring.build_scorecard_from_pillars(pillars_public)
+    public_card["meta"] = card["meta"]
     public_out = os.path.join(HERE, "docs", "data", "scorecard.json")
     os.makedirs(os.path.dirname(public_out), exist_ok=True)
     with open(public_out, "w") as f:
         json.dump(public_card, f, indent=2, ensure_ascii=False)
     print(f"Saved: {public_out}  (public — no personal data, safe to git push)")
 
-    # Fund NAV history: market data (the fund's own price over time), not
-    # personal — safe to publish. Lets the public dashboard's private
-    # calculator turn (invested amount, purchase date) into a value
-    # entirely in the browser, without needing your real position here.
+    # Primary holding's price history: still published for the public
+    # dashboard's private calculator (single-holding UI, unchanged for
+    # now — multi-holding front-end is a follow-up).
+    primary_name = holdings[0]["name"]
     nav_history_out = os.path.join(HERE, "docs", "data", "nav_history.json")
     with open(nav_history_out, "w") as f:
-        json.dump(history.get("fund_nav", []), f, separators=(",", ":"))
-    print(f"Saved: {nav_history_out}  (public — fund price history, safe to git push)")
+        json.dump(holdings_data[primary_name]["history"], f, separators=(",", ":"))
+    print(f"Saved: {nav_history_out}  (public — primary holding price history, safe to git push)")
 
-    # Benchmark/macro history: same market data already used by the outlook
-    # pillar, published so the dashboard's chart can plot it too.
     macro_history_out = os.path.join(HERE, "docs", "data", "macro_history.json")
     with open(macro_history_out, "w") as f:
-        json.dump({k: v for k, v in history.items() if k != "fund_nav"},
-                  f, separators=(",", ":"))
+        json.dump({k: v for k, v in history.items()}, f, separators=(",", ":"))
     print(f"Saved: {macro_history_out}  (public — benchmark price history, safe to git push)")
 
 

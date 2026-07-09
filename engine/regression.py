@@ -35,8 +35,6 @@ Methodology, spelled out so it's checkable:
 import pandas as pd
 import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.inspection import permutation_importance
 
 # Rate/spread/volatility-index series: use first differences (level
 # change), not % returns (their level can be near/cross zero).
@@ -86,6 +84,68 @@ def _to_changes(levels):
     return out.dropna()
 
 
+def build_portfolio_nav(holdings_histories: dict, weights: dict) -> list:
+    """
+    holdings_histories: {holding_name: [(iso_date, price), ...]}
+    weights: {holding_name: float}, current (today's) portfolio weights.
+
+    Returns a synthetic portfolio price series (list of (iso_date, value)
+    tuples, indexed to 100 at the first date every holding has a price),
+    built by applying TODAY'S weights retroactively across the whole
+    history.
+
+    This is a deliberate simplification: it answers "how would a
+    portfolio with today's mix have behaved historically", not "how did
+    my actual portfolio evolve" (which would require simulating cash
+    flows from each holding's own purchase date — real, but a lot more
+    machinery for a personal tool). Documented here and in the pillar's
+    own signal text so it's never presented as more than it is.
+    """
+    frames = {name: dict(hist) for name, hist in holdings_histories.items() if hist}
+    if not frames:
+        return []
+    common_dates = set.intersection(*(set(d.keys()) for d in frames.values()))
+    if not common_dates:
+        return []
+    common_dates = sorted(common_dates)
+    bases = {name: frames[name][common_dates[0]] for name in frames}
+    portfolio = []
+    for d in common_dates:
+        val = sum(weights.get(name, 0) * (frames[name][d] / bases[name])
+                  for name in frames if bases[name])
+        portfolio.append((d, val * 100))
+    return portfolio
+
+
+def narrative_summary(result: dict) -> str:
+    """Plain-language readout for a non-expert. Only mentions factors
+    that are BOTH statistically significant (p<0.05) AND not badly
+    collinear (VIF < 10) — a significant coefficient on a high-VIF
+    factor has an unreliable sign, so putting it in plain language would
+    mislead. Those factors still appear in the coefficient table,
+    flagged with their VIF."""
+    if "error" in result:
+        return result["error"]
+
+    def reliable(v):
+        return v["pvalue"] < 0.05 and (v.get("vif") is None or v["vif"] < 10)
+
+    positive = [FACTOR_LABELS.get(k, k) for k, v in result["factors"].items()
+               if reliable(v) and v["coef"] > 0]
+    negative = [FACTOR_LABELS.get(k, k) for k, v in result["factors"].items()
+               if reliable(v) and v["coef"] < 0]
+    if not positive and not negative:
+        return ("Su questo storico, nessun fattore ha una relazione statisticamente "
+                "affidabile con il tuo portafoglio — i movimenti sembrano dominati da "
+                "cause specifiche dell'asset, non dal contesto macro tracciato qui.")
+    parts = []
+    if positive:
+        parts.append(f"si muove storicamente insieme a {', '.join(positive)}")
+    if negative:
+        parts.append(f"tende a soffrire quando sale {', '.join(negative)}")
+    return "Il tuo portafoglio " + "; ".join(parts) + ". Relazione storica, non una garanzia futura."
+
+
 def fit_factor_model(nav_history, macro_history):
     """Returns a dict:
       {"n_obs": int, "r2": float, "adj_r2": float, "start": iso, "end": iso,
@@ -125,71 +185,5 @@ def fit_factor_model(nav_history, macro_history):
                 "pvalue": float(model.pvalues[f]),
                 "vif": vifs.get(f),
             } for f in factors
-        },
-    }
-
-
-def fit_random_forest_model(nav_history, macro_history, test_frac=0.2,
-                            n_estimators=300, max_depth=5, min_samples_leaf=10):
-    """
-    EXPERIMENTAL — local-only comparison, not wired into the scorecard yet.
-
-    Random Forest on the same factors/transforms as fit_factor_model(), but
-    evaluated honestly: chronological train/test split (no shuffling — this
-    is a time series, shuffling would leak future info into training), and
-    the OLS model is re-fit on the SAME train split and scored on the SAME
-    test split so the R² comparison is apples-to-apples (fit_factor_model's
-    R² above is in-sample, which flatters any model).
-
-    Feature ranking uses PERMUTATION importance on the test set, not the
-    default impurity-based importance — impurity importance is biased
-    toward correlated/high-cardinality features (exactly the SP500/NASDAQ
-    collinearity problem flagged in fit_factor_model).
-
-    Returns {"error": "..."} if there's not enough data for a meaningful
-    split, else a dict with n_train/n_test, rf_train_r2/rf_test_r2,
-    ols_test_r2 (for comparison), and importances per factor.
-    """
-    levels = _build_levels(nav_history, macro_history)
-    changes = _to_changes(levels)
-    factors = [f for f in REGRESSION_FACTORS if f in changes.columns]
-    n = len(changes)
-    split = int(n * (1 - test_frac))
-    if n < 100 or split < 50 or (n - split) < 20:
-        return {"error": f"not enough aligned data for a train/test split ({n} rows)"}
-
-    y = changes["asset"]
-    X = changes[factors]
-    X_train, X_test = X.iloc[:split], X.iloc[split:]
-    y_train, y_test = y.iloc[:split], y.iloc[split:]
-
-    rf = RandomForestRegressor(n_estimators=n_estimators, max_depth=max_depth,
-                               min_samples_leaf=min_samples_leaf, random_state=42, n_jobs=-1)
-    rf.fit(X_train, y_train)
-    rf_train_r2 = float(rf.score(X_train, y_train))
-    rf_test_r2 = float(rf.score(X_test, y_test))
-
-    # Same train/test split, OLS this time, for a fair comparison.
-    ols = sm.OLS(y_train, sm.add_constant(X_train)).fit()
-    X_test_c = sm.add_constant(X_test, has_constant="add")
-    y_pred = ols.predict(X_test_c)
-    ss_res = ((y_test - y_pred) ** 2).sum()
-    ss_tot = ((y_test - y_test.mean()) ** 2).sum()
-    ols_test_r2 = float(1 - ss_res / ss_tot) if ss_tot else None
-
-    perm = permutation_importance(rf, X_test, y_test, n_repeats=30,
-                                  random_state=42, n_jobs=-1)
-
-    return {
-        "n_train": split,
-        "n_test": n - split,
-        "test_start": str(changes.index[split]),
-        "test_end": str(changes.index[-1]),
-        "rf_train_r2": rf_train_r2,
-        "rf_test_r2": rf_test_r2,
-        "ols_test_r2": ols_test_r2,
-        "importances": {
-            f: {"importance": float(perm.importances_mean[i]), "std": float(perm.importances_std[i])}
-            for i, f in enumerate(factors)
         },
     }

@@ -154,6 +154,10 @@ async function fetchJSON(url) {
   }
 }
 
+// Distinct colors for user-selected portfolio assets (assigned in order).
+const EXTRA_SERIES_COLORS = ["#2f7a4f", "#8e44ad", "#e67e22", "#16a085",
+                             "#c0392b", "#2980b9", "#d4ac0d", "#7f8c8d"];
+
 async function initChartSection(container, sources) {
   container.innerHTML = `<div id="private-placeholder">Caricamento storico…</div>`;
 
@@ -166,9 +170,26 @@ async function initChartSection(container, sources) {
     return;
   }
 
+  // Assets the user picked in the dashboard, passed in already-loaded as
+  // {key, label, history}. When present, THESE are the "asset" lines
+  // (each its own color) and the default nav_history line is dropped —
+  // that's how "the chart changes with more assets" works.
+  const extraSeries = (sources.extraSeries || []).map((s, i) => ({
+    ...s, color: EXTRA_SERIES_COLORS[i % EXTRA_SERIES_COLORS.length],
+  }));
+  const hasPortfolio = extraSeries.length > 0;
+
+  // series shown: portfolio assets (or default nav "asset") + macro factors
+  const assetDefs = hasPortfolio
+    ? extraSeries.map(s => ({ key: s.key, label: s.label, color: s.color, defaultOn: true, isExtra: true }))
+    : [SERIES_DEFS[0]];
+  const seriesDefs = [...assetDefs, ...SERIES_DEFS.slice(1)];
+  const extraHistByKey = {};
+  for (const s of extraSeries) extraHistByKey[s.key] = s.history;
+
   const state = {
     range: "Dal 2021",
-    visible: new Set(SERIES_DEFS.filter(s => s.defaultOn).map(s => s.key)),
+    visible: new Set(seriesDefs.filter(s => s.defaultOn).map(s => s.key)),
     showProjection: true,
   };
 
@@ -180,7 +201,7 @@ async function initChartSection(container, sources) {
 
   const legendRow = document.createElement("div");
   legendRow.className = "chart-legend";
-  legendRow.innerHTML = SERIES_DEFS.map(s => `
+  legendRow.innerHTML = seriesDefs.map(s => `
     <label class="chart-legend-item">
       <input type="checkbox" data-series="${s.key}" ${state.visible.has(s.key) ? "checked" : ""}>
       <span class="chart-swatch" style="background:${s.color}"></span>${s.label}
@@ -208,36 +229,46 @@ async function initChartSection(container, sources) {
   container.appendChild(svgHolder);
   container.appendChild(projNote);
 
+  // Asset the projection is drawn for: the first selected portfolio
+  // asset if any, else the default nav_history line.
+  const projKey = hasPortfolio ? assetDefs[0].key : "asset";
+  const projHistory = hasPortfolio ? extraHistByKey[assetDefs[0].key] : navHistory;
+  const projLabel = hasPortfolio ? assetDefs[0].label : "NAV";
+
   function render() {
     const days = RANGE_DAYS[state.range];
     const seriesData = [];
 
-    if (state.visible.has("asset")) {
-      const sliced = sliceRange(navHistory, days);
-      const points = rebaseTo100(sliced);
+    // asset line(s): either the default nav "asset" or the portfolio assets
+    if (!hasPortfolio && state.visible.has("asset")) {
+      const points = rebaseTo100(sliceRange(navHistory, days));
       if (points.length) seriesData.push({ key: "asset", color: SERIES_DEFS[0].color, points });
+    }
+    for (const def of assetDefs) {
+      if (!def.isExtra || !state.visible.has(def.key)) continue;
+      const points = rebaseTo100(sliceRange(extraHistByKey[def.key], days));
+      if (points.length) seriesData.push({ key: def.key, color: def.color, points });
     }
     for (const def of SERIES_DEFS.slice(1)) {
       if (!state.visible.has(def.key)) continue;
       const raw = macroHistory[def.historyKey];
       if (!raw) continue;
-      const sliced = sliceRange(raw, days);
-      const points = rebaseTo100(sliced);
+      const points = rebaseTo100(sliceRange(raw, days));
       if (points.length) seriesData.push({ key: def.key, color: def.color, points });
     }
 
     let projection = null;
-    if (state.showProjection && !state.visible.has("asset")) {
-      projNote.textContent = "Attiva la serie \"Asset (NAV)\" per vedere la proiezione.";
+    if (state.showProjection && !state.visible.has(projKey)) {
+      projNote.textContent = `Attiva la serie "${projLabel}" per vedere la proiezione.`;
     } else if (state.showProjection) {
       // Fit is ALWAYS on the last 1Y, regardless of the range selector —
       // see PROJECTION_LOOKBACK_DAYS.
-      const fitWindow = sliceRange(navHistory, PROJECTION_LOOKBACK_DAYS);
+      const fitWindow = sliceRange(projHistory, PROJECTION_LOOKBACK_DAYS);
       if (fitWindow.length >= 10) {
         const reg = linearRegression(fitWindow);
         const lastDate = fitWindow[fitWindow.length - 1][0];
         const lastActual = fitWindow[fitWindow.length - 1][1];
-        // Anchored at the actual last NAV value, not the fitted line's
+        // Anchored at the actual last price value, not the fitted line's
         // value there — a straight line fit over a whole year will sit
         // away from a recent rally/dip, which looked like a disconnected,
         // "floating" dashed line. Anchoring keeps it visually continuous
@@ -250,15 +281,14 @@ async function initChartSection(container, sources) {
           const val = lastActual + reg.slope * step;
           projPointsRaw.push([date, val]);
         }
-        // Rebase using the SAME base as whatever asset series is currently
-        // displayed, so the dashed line lines up with the solid one on
-        // screen no matter which range button is active.
-        const displayedAssetSliced = sliceRange(navHistory, days);
-        const base = displayedAssetSliced.length ? displayedAssetSliced[0][1] : lastActual;
+        // Rebase using the SAME base as the displayed projected asset line,
+        // so the dashed line lines up with the solid one on screen.
+        const displayedSliced = sliceRange(projHistory, days);
+        const base = displayedSliced.length ? displayedSliced[0][1] : lastActual;
         const points = projPointsRaw.map(([d, v]) => [d, base ? (v / base) * 100 : v]);
         projection = { points, color: "#8a8478", r2: reg.r2 };
         projNote.innerHTML =
-          `📐 Proiezione lineare sul NAV — ancorata all'ultimo prezzo reale, con la direzione (slope) ` +
+          `📐 Proiezione lineare su ${projLabel} — ancorata all'ultimo prezzo reale, con la direzione (slope) ` +
           `stimata sugli ultimi 12 mesi ed estesa in avanti di ~${PROJECTION_HORIZON_DAYS} giorni di trading. ` +
           `R² = ${reg.r2.toFixed(2)} su 1 anno (quanto la retta spiega i dati reali: 1.0 = perfetto, valori bassi = ` +
           `il prezzo non segue affatto una linea retta). <strong>Non è una previsione affidabile</strong> — ` +

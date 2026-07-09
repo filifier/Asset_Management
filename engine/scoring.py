@@ -241,6 +241,9 @@ def pillar_factor_regression(nav_history: list, macro_history: Dict[str, list]) 
         p.add(Signal("Modello", "non disponibile", 0, "neutral", result["error"]))
         return p
 
+    p.add(Signal("In sintesi", regression.narrative_summary(result), 0, "neutral",
+                 "Lettura in linguaggio semplice dei soli fattori statisticamente significativi (p<0.05) qui sotto — non un consiglio, solo un riassunto della tabella."))
+
     p.add(Signal("Adattamento del modello",
                  f"R²={result['r2']:.2f} (adj. {result['adj_r2']:.2f}), n={result['n_obs']}",
                  0, "neutral",
@@ -322,6 +325,68 @@ def pillar_position(invested_amount: float, purchase_nav: float, nav: float,
     return p
 
 
+# ── PILLAR 3b: YOUR POSITION, MULTI-HOLDING ─────────────────────────
+def pillar_position_multi(holdings: List[dict], portfolio_value: float) -> Pillar:
+    """
+    Same idea as pillar_position, generalized to N holdings.
+
+    holdings: list of dicts, each: {"name", "invested_amount",
+      "market_value"} — market_value is None for holdings we couldn't
+      price (fetch failed / not enough history), which are excluded
+      from every computation below rather than guessed at.
+
+    Only the AGGREGATE P&L is scored (using the same thresholds as the
+    single-holding version) — per-holding P&L is shown for context but
+    doesn't add its own points, so a portfolio with 4 holdings doesn't
+    just accumulate score from repeating substantially the same signal.
+    Concentration IS scored per holding, since each position's size is
+    its own, independent risk.
+    """
+    p = Pillar("position", "Your position")
+    priced = [h for h in holdings if h.get("market_value") is not None]
+    if not priced:
+        p.add(Signal("Position", "not entered", 0, "neutral",
+                     "Enter invested amount and purchase date for at least one holding to activate this pillar."))
+        return p
+
+    total_invested = sum(h["invested_amount"] for h in priced)
+    total_value = sum(h["market_value"] for h in priced)
+    total_pnl_pct = (total_value - total_invested) / total_invested * 100 if total_invested else 0
+
+    if total_pnl_pct >= 25:
+        p.add(Signal("Portfolio P&L (tracked holdings)", f"+{total_pnl_pct:.0f}%", -1, "caution",
+                     "Sitting on a sizeable gain across your tracked holdings — a profit-taker would note the cushion."))
+    elif total_pnl_pct <= -15:
+        p.add(Signal("Portfolio P&L (tracked holdings)", f"{total_pnl_pct:.0f}%", 0, "neutral",
+                     "Underwater overall — decision hinges on whether your original thesis still holds."))
+    else:
+        p.add(Signal("Portfolio P&L (tracked holdings)", f"{total_pnl_pct:+.0f}%", 0, "neutral",
+                     "P&L is in a moderate range across your tracked holdings."))
+
+    if len(holdings) > len(priced):
+        skipped = [h["name"] for h in holdings if h.get("market_value") is None]
+        p.add(Signal("Not tracked", ", ".join(skipped), 0, "neutral",
+                     "No price history available for these — excluded from every number above, not guessed at."))
+
+    for h in priced:
+        pnl_pct = (h["market_value"] - h["invested_amount"]) / h["invested_amount"] * 100
+        p.add(Signal(f"{h['name']} — P&L", f"{pnl_pct:+.0f}%", 0, "neutral",
+                     "Per-holding unrealised P&L — informational, doesn't add to the pillar score (the portfolio total above already does)."))
+        if portfolio_value > 0:
+            conc = h["market_value"] / portfolio_value * 100
+            if conc >= 30:
+                p.add(Signal(f"{h['name']} — Concentration", f"{conc:.0f}% of portfolio", -1, "caution",
+                             "A large share of your declared portfolio value — concentration risk."))
+            elif conc <= 10:
+                p.add(Signal(f"{h['name']} — Concentration", f"{conc:.0f}% of portfolio", +1, "supportive",
+                             "A modest share of your declared portfolio value — room to size up if conviction is high."))
+            else:
+                p.add(Signal(f"{h['name']} — Concentration", f"{conc:.0f}% of portfolio", 0, "neutral",
+                             "A moderate share of your declared portfolio value."))
+    p.score = max(-2, min(2, p.score))
+    return p
+
+
 # ── AGGREGATE ───────────────────────────────────────────────────────
 def _assemble(pillars: List[Pillar]) -> dict:
     """Shared aggregation: total score + descriptive summary for a set of pillars."""
@@ -349,24 +414,10 @@ def _assemble(pillars: List[Pillar]) -> dict:
     }
 
 
-def build_scorecard(inputs: dict) -> dict:
-    """Full scorecard: asset + macro + outlook + factor regression +
-    your position. Contains personal portfolio figures (P&L,
-    concentration) — keep this one local, never publish it."""
-    a = pillar_asset(**inputs["asset"], nav_trend_1m=inputs.get("asset_nav_trend_1m"))
-    m = pillar_macro(inputs["macro"], inputs["profile_key"])
-    o = pillar_outlook(inputs["macro_history"], inputs["profile_key"])
-    f = pillar_factor_regression(inputs["asset_nav_history"], inputs["macro_history"])
-    pos = pillar_position(**inputs["position"])
-    return _assemble([a, m, o, f, pos])
-
-
-def build_public_scorecard(inputs: dict) -> dict:
-    """Asset + macro + outlook + factor regression — no position/
-    portfolio data. Safe to publish: describes the asset and market
-    against themselves, not your personal holding."""
-    a = pillar_asset(**inputs["asset"], nav_trend_1m=inputs.get("asset_nav_trend_1m"))
-    m = pillar_macro(inputs["macro"], inputs["profile_key"])
-    o = pillar_outlook(inputs["macro_history"], inputs["profile_key"])
-    f = pillar_factor_regression(inputs["asset_nav_history"], inputs["macro_history"])
-    return _assemble([a, m, o, f])
+def build_scorecard_from_pillars(pillars: List[Pillar]) -> dict:
+    """Generic assembler: run.py builds whichever pillars apply (one
+    pillar_asset per holding now that a portfolio can have several,
+    plus macro/outlook/factor_regression/position) and hands the list
+    here. Replaces the old single-holding build_scorecard/
+    build_public_scorecard, which assumed exactly one asset."""
+    return _assemble(pillars)

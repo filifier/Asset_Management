@@ -34,13 +34,6 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; portfolio-bi/1.0)"}
 # window.
 HISTORY_START_DATE = "2021-01-01"
 
-# The fund page's performance-chart AJAX endpoint. The numeric id in the
-# path is specific to this fund's page (BlackRock generates it per
-# product) — if you point this at a different fund, view the fund's page
-# source and look for a "<id>.ajax?tab=chart" request to find its id.
-FUND_CHART_URL = ("https://www.blackrock.com/ch/individual/en/products/229301/"
-                   "blackrock-new-energy-e2-eur-fund/1489751357104.ajax?tab=chart")
-
 # Matches entries like:
 #   {x:Date.UTC(2026,6,8),y:Number((18.66).toFixed(2)),formattedX: "08-Jul-2026"}
 _NAV_ENTRY_RE = re.compile(
@@ -72,13 +65,16 @@ def _get(url, timeout=30):
         return r.read().decode("utf-8", errors="replace")
 
 
-def fetch_fund_nav():
-    """Return (latest_nav, as_of_iso, history). history is a list of
-    (iso_date, nav) tuples, oldest first, spanning the fund's full
-    published NAV series. On any failure: (None, None, []) — never a
-    fabricated value; the caller falls back to the last known NAV."""
+def fetch_fund_nav(chart_url):
+    """Return (latest_nav, as_of_iso, history) for a BlackRock-style fund
+    chart-data endpoint (chart_url — the fund page's own "<id>.ajax?tab=chart"
+    URL; to find it for a different fund, view that fund's page source and
+    look for that request). history is a list of (iso_date, nav) tuples,
+    oldest first, spanning the fund's full published NAV series. On any
+    failure: (None, None, []) — never a fabricated value; the caller falls
+    back to the last known NAV."""
     try:
-        html = _get(FUND_CHART_URL)
+        html = _get(chart_url)
     except (URLError, HTTPError, TimeoutError) as e:
         print(f"  ! fund fetch failed: {e}")
         return None, None, []
@@ -97,6 +93,24 @@ def fetch_fund_nav():
         return None, None, []
     as_of, latest = history[-1]
     return latest, as_of, history
+
+
+def fetch_holding_price(holding):
+    """Dispatch on holding["source"]: "blackrock" scrapes the fund's own
+    chart endpoint (holding["fund_chart_url"]); "yahoo" pulls a ticker
+    (holding["ticker"]) from Yahoo Finance — same reliable source as the
+    benchmarks, works for any exchange-traded ETF/stock. Returns
+    (latest_price, as_of_iso, history) — (None, None, []) on failure or an
+    unrecognized source, never a fabricated value."""
+    source = holding.get("source", "yahoo")
+    if source == "blackrock":
+        return fetch_fund_nav(holding["fund_chart_url"])
+    if source == "yahoo":
+        latest, history = fetch_yahoo_chart(holding["ticker"])
+        as_of = history[-1][0] if history else None
+        return latest, as_of, history
+    print(f"  ! unknown holding source {source!r} for {holding.get('name')!r}")
+    return None, None, []
 
 
 def fetch_yahoo_chart(symbol, start_date=HISTORY_START_DATE, interval="1d"):
@@ -131,18 +145,29 @@ def fetch_yahoo_chart(symbol, start_date=HISTORY_START_DATE, interval="1d"):
 
 
 def fetch_all():
+    """Benchmarks/macro factors only — no specific holding. See
+    fetch_holdings() for per-position price history."""
     print("Fetching benchmarks…")
     out, history = {}, {}
     for key, symbol in YAHOO_SYMBOLS.items():
         latest, hist = fetch_yahoo_chart(symbol)
         out[key], history[key] = latest, hist
         print(f"  {key}: {latest}  ({len(hist)} historical points)")
-    print("Fetching fund NAV (BlackRock)…")
-    nav, as_of, nav_history = fetch_fund_nav()
-    out["fund_nav"], out["fund_asof"] = nav, as_of
-    history["fund_nav"] = nav_history
-    print(f"  NAV: {nav} ({as_of})  ({len(nav_history)} historical points)")
     return out, history
+
+
+def fetch_holdings(holdings):
+    """Fetch latest price + history for every holding in position.json.
+    Returns {holding_name: {"price": float|None, "as_of": iso|None,
+    "history": [...]}}, keyed by each holding's "name"."""
+    out = {}
+    for h in holdings:
+        name = h["name"]
+        print(f"Fetching {name} ({h.get('source', 'yahoo')})…")
+        price, as_of, hist = fetch_holding_price(h)
+        out[name] = {"price": price, "as_of": as_of, "history": hist}
+        print(f"  {name}: {price} ({as_of})  ({len(hist)} historical points)")
+    return out
 
 
 if __name__ == "__main__":

@@ -158,9 +158,28 @@ La dashboard è divisa in due viste, selezionabili con i pulsanti in alto:
 
 - **Dashboard** — i pillar descrittivi (asset momentum, macro context, macro
   outlook, la tua posizione) più il riepilogo. Corta e leggibile.
-- **Analisi & Previsione** — il grafico "Andamento" e la tabella della
-  regressione fattoriale, la parte più statistica/matematica, separata così
-  da non appesantire la vista principale.
+- **Analisi & Previsione** — il grafico "Andamento" e le regressioni
+  fattoriali, la parte più statistica/matematica, separata così da non
+  appesantire la vista principale. **Reagisce al portafoglio**: quando
+  l'utente aggiunge/rimuove titoli nella tab Dashboard, il grafico mostra
+  quei titoli come linee asset e compare **una regressione OLS dedicata per
+  ciascuno** (quanto impatto ha ogni fattore macro su quel titolo).
+
+## Regressione OLS lato browser (`docs/ols.js`)
+
+La regressione per-asset della tab Analisi gira **interamente nel browser** —
+niente Python, perché l'utente costruisce il portafoglio dopo il caricamento
+della pagina e Yahoo non è raggiungibile dal browser (CORS). `docs/ols.js`
+reimplementa in JavaScript esattamente la stessa metodologia di
+`engine/regression.py` (stesse trasformazioni, term_spread derivato, us_2y
+escluso, coefficienti/R²/VIF), usando i dati già pubblicati
+(`macro_history.json` + `tickers/<SIM>.json`). Verificato: i numeri
+coincidono con statsmodels alla 4ª cifra decimale. L'unica approssimazione
+deliberata è nei p-value (CDF normale invece della t di Student — con n~1000
+osservazioni sono indistinguibili). La sintesi in linguaggio semplice cita
+solo i fattori significativi **e** a basso VIF (<10): un coefficiente
+significativo ma collineare ha segno inaffidabile, quindi metterlo in una
+frase per un utente medio sarebbe fuorviante — resta in tabella, col flag VIF.
 
 ## Sezione "Andamento" — grafico e proiezione
 
@@ -204,41 +223,66 @@ Per questo:
   macro outlook (dati di mercato, nessun dato tuo), più `docs/data/nav_history.json`
   — lo storico del NAV del fondo, anche questo dato di mercato pubblico. È
   quella che pubblichi su GitHub Pages.
-- Nella dashboard pubblica c'è comunque una sezione **"La tua posizione
-  (privata)"**: un piccolo form dove chiunque (anche tu, sul tuo dispositivo)
-  inserisce **importo investito e data di acquisto** — non le unità. Il
-  browser cerca da solo il NAV di quel giorno nello storico pubblico
-  (`nav_history.json`) e calcola P&L e concentrazione, **interamente in
-  JavaScript** — non viene mai inviato a un server né salvato nel repository.
-  Se spunti "ricorda", resta solo nel `localStorage` del tuo browser.
-- `web/` è la dashboard di **sviluppo locale**: mostra tutti e cinque i
-  pilastri usando i dati reali da `data/position.json`, comoda per uso
-  personale sul tuo Mac.
+- Nella dashboard pubblica c'è la sezione **"Il tuo portafoglio (privato)"**:
+  l'utente costruisce il proprio portafoglio direttamente nel browser —
+  cerca un titolo/ETF per nome o ticker, lo seleziona, indica importo e data
+  d'acquisto, e vede la performance. Nessuna unità da calcolare a mano.
+  Tutto avviene **interamente in JavaScript** — nessun dato viene inviato a
+  un server né salvato nel repository. Se spunti "ricorda", il portafoglio
+  resta solo nel `localStorage` del tuo browser. Vedi sotto "Ricerca titoli"
+  per come funziona senza chiamate di rete live.
+- `web/` è la dashboard di **sviluppo locale**: mostra tutti i pilastri
+  usando i dati reali da `data/position.json`, comoda per uso personale sul
+  tuo Mac.
+
+## Ricerca titoli — perché una lista pre-scaricata, non live
+
+Il browser **non può** chiamare Yahoo Finance direttamente: sia l'endpoint di
+ricerca sia quello dei prezzi sono bloccati da CORS (verificato in un browser
+reale, non supposto). Quindi la ricerca "digita e trova" e il calcolo di
+performance possono funzionare solo per titoli il cui storico **abbiamo già
+pubblicato** come file statico sul nostro dominio. Due pezzi:
+
+- `docs/data/ticker_list.json` — lista curata di ~107 titoli/ETF comuni
+  (large cap USA, ETF UCITS popolari su Borsa Italiana e non), ognuno
+  verificato contro Yahoo. La ricerca digitando avviene **istantaneamente nel
+  browser**, senza nessuna chiamata di rete.
+- `docs/data/tickers/<SIMBOLO>.json` — lo storico prezzi 2021→oggi di ciascun
+  titolo della lista, scaricato in anticipo da `build_ticker_universe.py`.
+  Quando l'utente sceglie un titolo, il browser carica solo **quel** file dal
+  nostro sito e calcola la performance.
+
+Per estendere la lista (nuovi titoli): aggiungi i simboli in
+`build_ticker_universe.py`, rilancialo (`python build_ticker_universe.py` —
+ci mette qualche minuto, non va lanciato ad ogni `run.py`), e ripubblica.
 
 ## Struttura
 
 ```
 portfolio_bi/
-├── run.py                    # entry point: lega tutto
-├── requirements.txt           # numpy, statsmodels
+├── run.py                     # entry point: lega tutto (multi-posizione)
+├── build_ticker_universe.py   # pre-scarica lo storico dei titoli cercabili
+├── requirements.txt            # numpy, statsmodels
 ├── data/
-│   ├── position.example.json # template — copialo in position.json
-│   ├── position.json         # LA TUA POSIZIONE reale (gitignored)
-│   └── scorecard.json        # output completo, locale (gitignored)
+│   ├── position.example.json  # template — copialo in position.json
+│   ├── position.json          # LA TUA POSIZIONE reale (gitignored)
+│   └── scorecard.json         # output completo, locale (gitignored)
 ├── engine/
-│   ├── fetch.py                # scarica NAV (BlackRock) + 11 fattori macro/benchmark
-│   │                            # (Yahoo Finance, no API key), storico dal 2021-01-01
-│   ├── regression.py            # OLS multi-fattoriale: coef/p-value/VIF, engine/regression.py
-│   └── scoring.py              # il motore trasparente: 5 pillar_*, build_scorecard
-│                                # (completo) e build_public_scorecard (senza posizione)
+│   ├── fetch.py                # NAV fondi (BlackRock) + ticker (Yahoo) + 11 fattori
+│   │                            # macro/benchmark, storico dal 2021-01-01, no API key
+│   ├── regression.py            # OLS multi-fattoriale (coef/p-value/VIF), portfolio NAV,
+│   │                            # sintesi in linguaggio semplice
+│   └── scoring.py              # il motore trasparente: pillar_*, build_scorecard_from_pillars
 ├── web/                       # dashboard di sviluppo locale (tutti i pilastri)
 │                                # riusa docs/chart.js e docs/data/*.json
-└── docs/                      # dashboard pubblica (GitHub Pages) + calcolatore
+└── docs/                      # dashboard pubblica (GitHub Pages) + input portafoglio
     ├── chart.js                # grafico + proiezione lineare (vanilla JS/SVG)
     └── data/
         ├── scorecard.json      # output pubblico, senza dati personali
-        ├── nav_history.json    # storico NAV del fondo — dato di mercato, pubblico
-        └── macro_history.json  # storico 11 fattori macro/benchmark — dato pubblico
+        ├── nav_history.json    # storico prezzo prima posizione — dato pubblico
+        ├── macro_history.json  # storico 11 fattori macro/benchmark — dato pubblico
+        ├── ticker_list.json    # lista curata cercabile (~107 titoli/ETF)
+        └── tickers/<SIM>.json  # storico prezzi per ogni titolo cercabile
 ```
 
 ## Prossimi passi — cose da chiedere a Claude Code

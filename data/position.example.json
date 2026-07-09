@@ -1,13 +1,24 @@
 {
-  "_comment": "Copia questo file in position.json e metti i tuoi valori reali. position.json non viene versionato su git. purchase_date: giorno in cui hai comprato (YYYY-MM-DD) — il motore trova da solo il NAV di quel giorno (o del trading day precedente) e calcola quante unità implicite e quanto vale oggi.",
+  "_comment": "Copia questo file in position.json e metti i tuoi valori reali. position.json non viene versionato su git. purchase_date: giorno in cui hai comprato (YYYY-MM-DD) — il motore trova da solo il prezzo di quel giorno e calcola quante unità implicite e quanto vale oggi. Due esempi sotto: un ETF quotato (source=yahoo, automatico — basta il ticker) e un fondo comune non quotato (source=blackrock, richiede l'URL del suo chart interno — vedi README 'Aggiungere una posizione').",
   "portfolio_value_eur": 50000,
   "holdings": [
+    {
+      "name": "Vanguard FTSE All-World UCITS ETF",
+      "isin": "IE00BK5BQT80",
+      "profile_key": "broad_equity",
+      "invested_amount_eur": 3000,
+      "purchase_date": "2023-01-10",
+      "source": "yahoo",
+      "ticker": "VWCE.MI"
+    },
     {
       "name": "BGF Sustainable Energy E2 EUR",
       "isin": "LU0171290074",
       "profile_key": "clean_energy_equity",
       "invested_amount_eur": 1500,
-      "purchase_date": "2024-03-15"
+      "purchase_date": "2024-03-15",
+      "source": "blackrock",
+      "fund_chart_url": "https://www.blackrock.com/ch/individual/en/products/229301/blackrock-new-energy-e2-eur-fund/1489751357104.ajax?tab=chart"
     }
   ]
 }
