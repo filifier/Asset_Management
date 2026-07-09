@@ -35,6 +35,8 @@ Methodology, spelled out so it's checkable:
 import pandas as pd
 import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.inspection import permutation_importance
 
 # Rate/spread/volatility-index series: use first differences (level
 # change), not % returns (their level can be near/cross zero).
@@ -123,5 +125,71 @@ def fit_factor_model(nav_history, macro_history):
                 "pvalue": float(model.pvalues[f]),
                 "vif": vifs.get(f),
             } for f in factors
+        },
+    }
+
+
+def fit_random_forest_model(nav_history, macro_history, test_frac=0.2,
+                            n_estimators=300, max_depth=5, min_samples_leaf=10):
+    """
+    EXPERIMENTAL — local-only comparison, not wired into the scorecard yet.
+
+    Random Forest on the same factors/transforms as fit_factor_model(), but
+    evaluated honestly: chronological train/test split (no shuffling — this
+    is a time series, shuffling would leak future info into training), and
+    the OLS model is re-fit on the SAME train split and scored on the SAME
+    test split so the R² comparison is apples-to-apples (fit_factor_model's
+    R² above is in-sample, which flatters any model).
+
+    Feature ranking uses PERMUTATION importance on the test set, not the
+    default impurity-based importance — impurity importance is biased
+    toward correlated/high-cardinality features (exactly the SP500/NASDAQ
+    collinearity problem flagged in fit_factor_model).
+
+    Returns {"error": "..."} if there's not enough data for a meaningful
+    split, else a dict with n_train/n_test, rf_train_r2/rf_test_r2,
+    ols_test_r2 (for comparison), and importances per factor.
+    """
+    levels = _build_levels(nav_history, macro_history)
+    changes = _to_changes(levels)
+    factors = [f for f in REGRESSION_FACTORS if f in changes.columns]
+    n = len(changes)
+    split = int(n * (1 - test_frac))
+    if n < 100 or split < 50 or (n - split) < 20:
+        return {"error": f"not enough aligned data for a train/test split ({n} rows)"}
+
+    y = changes["asset"]
+    X = changes[factors]
+    X_train, X_test = X.iloc[:split], X.iloc[split:]
+    y_train, y_test = y.iloc[:split], y.iloc[split:]
+
+    rf = RandomForestRegressor(n_estimators=n_estimators, max_depth=max_depth,
+                               min_samples_leaf=min_samples_leaf, random_state=42, n_jobs=-1)
+    rf.fit(X_train, y_train)
+    rf_train_r2 = float(rf.score(X_train, y_train))
+    rf_test_r2 = float(rf.score(X_test, y_test))
+
+    # Same train/test split, OLS this time, for a fair comparison.
+    ols = sm.OLS(y_train, sm.add_constant(X_train)).fit()
+    X_test_c = sm.add_constant(X_test, has_constant="add")
+    y_pred = ols.predict(X_test_c)
+    ss_res = ((y_test - y_pred) ** 2).sum()
+    ss_tot = ((y_test - y_test.mean()) ** 2).sum()
+    ols_test_r2 = float(1 - ss_res / ss_tot) if ss_tot else None
+
+    perm = permutation_importance(rf, X_test, y_test, n_repeats=30,
+                                  random_state=42, n_jobs=-1)
+
+    return {
+        "n_train": split,
+        "n_test": n - split,
+        "test_start": str(changes.index[split]),
+        "test_end": str(changes.index[-1]),
+        "rf_train_r2": rf_train_r2,
+        "rf_test_r2": rf_test_r2,
+        "ols_test_r2": ols_test_r2,
+        "importances": {
+            f: {"importance": float(perm.importances_mean[i]), "std": float(perm.importances_std[i])}
+            for i, f in enumerate(factors)
         },
     }
