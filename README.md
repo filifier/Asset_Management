@@ -219,18 +219,23 @@ Il pilastro "Your position" contiene i tuoi numeri reali (importo investito,
 valore portafoglio) — dati che non vuoi finiscano in un repository pubblico.
 Per questo:
 
-- `docs/` è la dashboard **pubblica**: mostra asset momentum, macro context e
-  macro outlook (dati di mercato, nessun dato tuo), più `docs/data/nav_history.json`
-  — lo storico del NAV del fondo, anche questo dato di mercato pubblico. È
-  quella che pubblichi su GitHub Pages.
-- Nella dashboard pubblica c'è la sezione **"Il tuo portafoglio (privato)"**:
-  l'utente costruisce il proprio portafoglio direttamente nel browser —
-  cerca un titolo/ETF per nome o ticker, lo seleziona, indica importo e data
-  d'acquisto, e vede la performance. Nessuna unità da calcolare a mano.
-  Tutto avviene **interamente in JavaScript** — nessun dato viene inviato a
-  un server né salvato nel repository. Se spunti "ricorda", il portafoglio
-  resta solo nel `localStorage` del tuo browser. Vedi sotto "Ricerca titoli"
-  per come funziona senza chiamate di rete live.
+- `docs/` è la dashboard **pubblica** ed è costruita **attorno al portafoglio
+  dell'utente**, non attorno a un asset fisso. La prima tab, **"Il tuo
+  portafoglio"**, è l'unica sezione principale: l'utente compone il proprio
+  portafoglio nel browser — cerca un titolo/ETF/fondo per nome o ticker, lo
+  seleziona, indica importo e data d'acquisto, e vede la performance. Nessuna
+  unità da calcolare a mano. Anche **il fondo BlackRock** (il punto di
+  partenza reale) si aggiunge così, come qualsiasi altro titolo — il suo
+  storico è pubblicato in `docs/data/nav_history.json` e `getTickerHistory()`
+  lo mappa al simbolo interno `BGF-SE`.
+- La seconda tab, **"Analisi & Previsione"**, contiene tutto il livello
+  analitico, guidato dal portafoglio: il grafico con i tuoi titoli, **una
+  regressione OLS per ciascun asset** (quanto impatto ha ogni fattore macro),
+  e il contesto di mercato (livello e trend dei fattori macro oggi).
+- Tutto avviene **interamente in JavaScript** — nessun dato personale viene
+  inviato a un server né salvato nel repository. Se spunti "ricorda", il
+  portafoglio resta solo nel `localStorage` del tuo browser. Vedi sotto
+  "Ricerca titoli" per come funziona senza chiamate di rete live.
 - `web/` è la dashboard di **sviluppo locale**: mostra tutti i pilastri
   usando i dati reali da `data/position.json`, comoda per uso personale sul
   tuo Mac.

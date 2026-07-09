@@ -58,7 +58,7 @@
         },
         {
           "name": "GOLD",
-          "reading": "$4,134",
+          "reading": "$4,133",
           "points": 0,
           "bias": "neutral",
           "why": "Safe-haven demand proxy (weight 0.2 for this asset type)."

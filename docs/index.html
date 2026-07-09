@@ -295,7 +295,7 @@
   <div id="error"></div>
 
   <div class="view-tabs" id="view-tabs" style="display:none">
-    <button type="button" class="view-tab-btn active" data-view="dashboard">Dashboard</button>
+    <button type="button" class="view-tab-btn active" data-view="dashboard">Il tuo portafoglio</button>
     <button type="button" class="view-tab-btn" data-view="analysis">Analisi &amp; Previsione</button>
   </div>
 
@@ -423,9 +423,16 @@ function searchTickers(query, limit = 8) {
   return scored.slice(0, limit).map(s => s.t);
 }
 
+// Non-Yahoo assets whose history lives in a dedicated published file
+// rather than data/tickers/<SYM>.json — currently just the BlackRock
+// fund (scraped by run.py into nav_history.json), so it can be added to
+// the private portfolio like any searchable ticker.
+const SPECIAL_HISTORY_FILES = { "BGF-SE": "data/nav_history.json" };
+
 async function getTickerHistory(symbol) {
   if (tickerHistoryCache[symbol]) return tickerHistoryCache[symbol];
-  const data = (await fetchJSON(`data/tickers/${encodeURIComponent(symbol)}.json`)) || [];
+  const url = SPECIAL_HISTORY_FILES[symbol] || `data/tickers/${encodeURIComponent(symbol)}.json`;
+  const data = (await fetchJSON(url)) || [];
   tickerHistoryCache[symbol] = data;
   return data;
 }
@@ -707,71 +714,55 @@ function timeAgo(date) {
   return `aggiornato ${h} ${h === 1 ? "ora" : "ore"} fa`;
 }
 
+// Renders one scorecard pillar (title + score badge + signal list) as a
+// card element. Reused by the Analysis tab for the market-context and
+// outlook pillars.
+function pillarCard(p) {
+  const el = document.createElement("div");
+  el.className = "pillar";
+  const bClass = badgeClass(p.score);
+  el.innerHTML = `
+    <div class="pillar-head">
+      <h2>${p.title}</h2>
+      <span class="badge ${bClass}">${p.label} (${p.score >= 0 ? "+" : ""}${p.score.toFixed(1)})</span>
+    </div>
+    <div class="signals"></div>
+  `;
+  const signalsEl = el.querySelector(".signals");
+  for (const s of p.signals) {
+    const row = document.createElement("div");
+    row.className = "signal";
+    row.innerHTML = `
+      <div class="mark ${s.bias}">${markSymbol[s.bias]}</div>
+      <div class="signal-body">
+        <span class="name">${s.name}</span><span class="reading">${s.reading}</span>
+        <div class="why">${s.why}</div>
+      </div>
+    `;
+    signalsEl.appendChild(row);
+  }
+  return el;
+}
+
+// The "Dashboard" tab is now the private portfolio, full stop — the
+// user builds their holdings here (including the BlackRock fund, added
+// like any other asset). Everything analytical (chart, per-asset
+// regressions, market context) lives in the "Analisi & Previsione" tab,
+// driven by this same portfolio. No server-defined asset sits at the top.
 function render(card, meta) {
   const content = document.getElementById("content");
   content.innerHTML = "";
 
-  const overview = document.createElement("div");
-  overview.className = "overview";
-  const bClass = badgeClass(card.total);
-  overview.innerHTML = `
-    <div class="overview-top">
-      <div>
-        <div class="name">${meta.assetName}</div>
-        <div class="nav">NAV: €${meta.nav}</div>
-      </div>
-      <span class="badge ${bClass}">${card.total >= 0 ? "+" : ""}${card.total.toFixed(1)}</span>
-    </div>
-    <div class="verdict">${verdictText(card.total)}</div>
-    <div class="refresh-row">
-      <button id="refresh-btn" type="button">↻ Aggiorna</button>
-      <span class="updated-at" id="updated-at">${timeAgo(meta.loadedAt)}</span>
-    </div>
+  const topbar = document.createElement("div");
+  topbar.className = "refresh-row";
+  topbar.style.marginBottom = "16px";
+  topbar.innerHTML = `
+    <button id="refresh-btn" type="button">↻ Aggiorna dati di mercato</button>
+    <span class="updated-at" id="updated-at">${timeAgo(meta.loadedAt)}</span>
   `;
-  content.appendChild(overview);
-
-  const legend = document.createElement("div");
-  legend.className = "legend";
-  legend.innerHTML = ["supportive", "caution", "neutral"].map(b =>
-    `<span><span class="mark ${b}">${markSymbol[b]}</span>${markLabel[b]}</span>`
-  ).join("");
-  content.appendChild(legend);
-
-  for (const p of card.pillars) {
-    if (p.key === "factor_regression") continue; // shown in the "Analisi & Previsione" tab instead
-    const el = document.createElement("div");
-    el.className = "pillar";
-    const bClass = badgeClass(p.score);
-    el.innerHTML = `
-      <div class="pillar-head">
-        <h2>${p.title}</h2>
-        <span class="badge ${bClass}">${p.label} (${p.score >= 0 ? "+" : ""}${p.score.toFixed(1)})</span>
-      </div>
-      <div class="signals"></div>
-    `;
-    const signalsEl = el.querySelector(".signals");
-    for (const s of p.signals) {
-      const row = document.createElement("div");
-      row.className = "signal";
-      row.innerHTML = `
-        <div class="mark ${s.bias}">${markSymbol[s.bias]}</div>
-        <div class="signal-body">
-          <span class="name">${s.name}</span><span class="reading">${s.reading}</span>
-          <div class="why">${s.why}</div>
-        </div>
-      `;
-      signalsEl.appendChild(row);
-    }
-    content.appendChild(el);
-  }
+  content.appendChild(topbar);
 
   content.appendChild(buildPrivateSection());
-
-  const summaryEl = document.createElement("div");
-  const leanClass = card.total >= 1 ? "support-lean" : card.total <= -1 ? "caution-lean" : "";
-  summaryEl.className = `summary ${leanClass}`;
-  summaryEl.textContent = card.summary;
-  content.appendChild(summaryEl);
 
   renderAnalysisTab(card);
 }
@@ -892,7 +883,7 @@ async function renderAnalysisTab(card) {
     extraSeries: picked,
   });
 
-  // ── regression(s) ──
+  // ── regression(s): one per selected asset, computed in the browser ──
   if (picked.length && analysisMacroHistory) {
     const intro = document.createElement("div");
     intro.className = "private-note";
@@ -913,20 +904,33 @@ async function renderAnalysisTab(card) {
       const subtitle = `Regressione OLS sui rendimenti giornalieri — R²=${result.r2.toFixed(2)} (adj. ${result.adjR2.toFixed(2)}), n=${result.n}. R² modesto è normale: i mercati non sono spiegati bene da un modello lineare.`;
       el.appendChild(regressionTableCard(`${asset.label} — analisi fattoriale`, narrative, subtitle, result.factors));
     }
-    return;
-  }
-
-  // ── fallback: static portfolio-level regression from scorecard.json ──
-  const stat = staticRegressionFromCard(card);
-  if (stat) {
-    const subtitle = `${stat.fitLine} — modello sul portafoglio definito lato server. Aggiungi titoli nella tab "Dashboard" per una regressione dedicata per ogni tuo asset.`;
-    el.appendChild(regressionTableCard("Analisi fattoriale (regressione OLS)", null, subtitle, stat.factors));
   } else {
     const c = document.createElement("div");
     c.className = "chart-card";
     c.innerHTML = `<h2>Analisi fattoriale (regressione OLS)</h2>
-      <div class="private-note">Aggiungi almeno un titolo al tuo portafoglio nella tab "Dashboard" per vedere qui una regressione OLS dedicata per ciascun asset.</div>`;
+      <div class="private-note">Aggiungi almeno un titolo al tuo portafoglio nella tab "Il tuo portafoglio" per vedere qui una regressione OLS dedicata per ciascun asset, più il grafico con i tuoi titoli.</div>`;
     el.appendChild(c);
+  }
+
+  // ── market context: current levels + recent trend of the macro
+  // factors (from scorecard.json — market data, not personal). Same
+  // signals the regressions above are run against. ──
+  const contextPillars = card.pillars.filter(p => p.key === "macro" || p.key === "outlook");
+  if (contextPillars.length) {
+    const ctxIntro = document.createElement("div");
+    ctxIntro.className = "private-note";
+    ctxIntro.style.margin = "18px 0 6px";
+    ctxIntro.innerHTML = `<strong>Contesto di mercato oggi</strong> — livello attuale e trend recente dei fattori macro sopra. Questi sono i dati con cui si incrocia il tuo portafoglio.`;
+    el.appendChild(ctxIntro);
+
+    const legend = document.createElement("div");
+    legend.className = "legend";
+    legend.innerHTML = ["supportive", "caution", "neutral"].map(b =>
+      `<span><span class="mark ${b}">${markSymbol[b]}</span>${markLabel[b]}</span>`
+    ).join("");
+    el.appendChild(legend);
+
+    for (const p of contextPillars) el.appendChild(pillarCard(p));
   }
 }
 
