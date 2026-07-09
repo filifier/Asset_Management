@@ -80,8 +80,22 @@ ASSET_PROFILES = {
 # ── PILLAR 1: ASSET MOMENTUM & VALUATION ────────────────────────────
 def pillar_asset(nav: float, low52: float, high52: float,
                  ret_1y: float, bench_1y: float,
-                 ret_5y: float, bench_5y: float) -> Pillar:
+                 ret_5y: float, bench_5y: float,
+                 nav_trend_1m: float = None) -> Pillar:
     p = Pillar("asset", "Asset momentum & valuation")
+
+    # Short-term NAV trend — same "plain % change" outlook logic as the
+    # macro outlook pillar, applied to the fund's own price this time.
+    if nav_trend_1m is not None:
+        direction = "rising" if nav_trend_1m > 0.5 else ("falling" if nav_trend_1m < -0.5 else "flat")
+        if direction == "falling":
+            pts, bias = -1, "caution"
+        elif direction == "rising":
+            pts, bias = 1, "supportive"
+        else:
+            pts, bias = 0, "neutral"
+        p.add(Signal("NAV trend (~1 month)", f"{nav_trend_1m:+.1f}% ({direction})", pts, bias,
+                     "Trend, not a prediction — plain % change in NAV over the lookback window."))
 
     # Where in the 52-week range? Near the top = "richer" (a profit-taker's note).
     rng = (nav - low52) / (high52 - low52) if high52 > low52 else 0.5
@@ -275,7 +289,7 @@ def build_scorecard(inputs: dict) -> dict:
     """Full scorecard: asset + macro + outlook + your position. Contains
     personal portfolio figures (P&L, concentration) — keep this one
     local, never publish it."""
-    a = pillar_asset(**inputs["asset"])
+    a = pillar_asset(**inputs["asset"], nav_trend_1m=inputs.get("asset_nav_trend_1m"))
     m = pillar_macro(inputs["macro"], inputs["profile_key"])
     o = pillar_outlook(inputs["macro_history"], inputs["profile_key"])
     pos = pillar_position(**inputs["position"])
@@ -286,7 +300,7 @@ def build_public_scorecard(inputs: dict) -> dict:
     """Asset + macro + outlook — no position/portfolio data. Safe to
     publish: describes the asset and market against themselves, not
     your personal holding."""
-    a = pillar_asset(**inputs["asset"])
+    a = pillar_asset(**inputs["asset"], nav_trend_1m=inputs.get("asset_nav_trend_1m"))
     m = pillar_macro(inputs["macro"], inputs["profile_key"])
     o = pillar_outlook(inputs["macro_history"], inputs["profile_key"])
     return _assemble([a, m, o])

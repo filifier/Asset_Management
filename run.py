@@ -26,14 +26,47 @@ sys.path.insert(0, HERE)
 from engine import fetch, scoring
 
 
-# Reference returns for the fund (from BlackRock, updated periodically).
-# These are the slow-moving inputs; NAV is the fast one that gets fetched.
+# Fallback only — used if the live NAV/benchmark history fetch fails.
+# Normally low52/high52/ret_1y/ret_5y/bench_1y/bench_5y are all computed
+# live in nav_range_and_returns() below, from BlackRock's own NAV history
+# and Yahoo's S&P 500 history. Update "last_known_nav" by hand only if
+# you want a specific fallback; it's otherwise unused while fetches work.
 FUND_REFERENCE = {
     "low52": 12.86, "high52": 20.04,
     "ret_1y": 54.67, "bench_1y": 26.73,
     "ret_5y": 55.77, "bench_5y": 80.18,
     "last_known_nav": 19.44,
 }
+
+TRADING_DAYS_1Y = 252
+
+
+def pct_change_over(history, days_back):
+    """history: list of (iso_date, value), oldest first. % change from
+    ~days_back trading days ago to the latest point. None if not enough
+    history — never fabricated."""
+    values = [v for _, v in history]
+    if len(values) < 2:
+        return None
+    past = values[max(0, len(values) - 1 - days_back)]
+    return (values[-1] - past) / past * 100 if past else None
+
+
+def nav_range_and_returns(nav_history, bench_history):
+    """Compute the fund's 52-week range and 1y/5y returns (fund + S&P
+    500 benchmark) directly from historical series, so these numbers
+    self-update instead of needing to be edited by hand."""
+    window = [v for _, v in nav_history[-TRADING_DAYS_1Y:]]
+    low52 = min(window) if window else None
+    high52 = max(window) if window else None
+    return {
+        "low52": low52,
+        "high52": high52,
+        "ret_1y": pct_change_over(nav_history, TRADING_DAYS_1Y),
+        "ret_5y": pct_change_over(nav_history, TRADING_DAYS_1Y * 5),
+        "bench_1y": pct_change_over(bench_history, TRADING_DAYS_1Y),
+        "bench_5y": pct_change_over(bench_history, TRADING_DAYS_1Y * 5),
+    }
 
 
 def macro_from_market(market: dict) -> dict:
@@ -101,17 +134,18 @@ def main():
     holding = position["holdings"][0]
     macro = macro_from_market(market)
 
+    # Live-computed from history where possible; fall back to the last
+    # hand-maintained reference for any figure history can't produce yet
+    # (e.g. first run, or fetch failure).
+    live = nav_range_and_returns(history.get("fund_nav", []), history.get("sp500", []))
+    asset_inputs = {k: (v if v is not None else FUND_REFERENCE[k]) for k, v in live.items()}
+    asset_inputs["nav"] = nav
+    nav_trend_1m = pct_change_over(history.get("fund_nav", []), 21)
+
     inputs = {
         "profile_key": holding["profile_key"],
-        "asset": {
-            "nav": nav,
-            "low52": FUND_REFERENCE["low52"],
-            "high52": FUND_REFERENCE["high52"],
-            "ret_1y": FUND_REFERENCE["ret_1y"],
-            "bench_1y": FUND_REFERENCE["bench_1y"],
-            "ret_5y": FUND_REFERENCE["ret_5y"],
-            "bench_5y": FUND_REFERENCE["bench_5y"],
-        },
+        "asset": asset_inputs,
+        "asset_nav_trend_1m": nav_trend_1m,
         "macro": macro,
         "macro_history": history,
         "position": {

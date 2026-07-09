@@ -31,6 +31,13 @@ python run.py
 Se non hai internet o il fetch del NAV fallisce, usa l'ultimo NAV noto — non
 inventa mai numeri.
 
+Il NAV del fondo viene dalla stessa fonte che alimenta il grafico storico
+della pagina BlackRock (endpoint interno `.../<id>.ajax?tab=chart`, non uno
+scraping fragile dell'HTML) — dà sia l'ultimo prezzo sia **tutto lo storico
+dal lancio del fondo**. Da questo storico, `run.py` calcola dal vivo il range
+52 settimane, i rendimenti 1y/5y del fondo e del benchmark (S&P 500 da Yahoo),
+e il trend NAV a ~1 mese — nessuno di questi numeri è più scritto a mano.
+
 Copia `data/position.example.json` in `data/position.json` e mettici i tuoi
 valori reali — quel file non viene mai versionato su git (vedi `.gitignore`).
 

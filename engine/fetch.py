@@ -1,18 +1,19 @@
 """
 fetch.py — pulls the inputs the scoring engine needs.
 
-Two very different reliability tiers, and the code is honest about it:
   • Benchmarks (S&P, VIX, yields, oil, FX, gold) → Yahoo Finance's public
-    chart endpoint, clean & free, no API key. Also gives us history, not
-    just the latest print — that's what engine/scoring.py's outlook
-    pillar uses to compute trend.
-  • Your fund NAV → scraped from BlackRock's page by ISIN. FRAGILE by
-    nature (it's a UCITS mutual fund; no free structured feed exists).
-    If the scrape fails, we DON'T fabricate — we return None and the
-    caller falls back to the last known NAV in position.json.
+    chart endpoint, clean & free, no API key.
+  • Your fund NAV → BlackRock's own chart-data endpoint (the same one the
+    fund page's performance chart loads from) — not a page scrape, this
+    is the fund's actual daily NAV series going back to inception.
+
+Both give us history, not just the latest print — that's what
+engine/scoring.py's outlook pillar (and the asset pillar's 52-week
+range / 1y / 5y returns, computed in run.py) use to compute trend.
 
 No API keys. If a source is down, the pipeline degrades gracefully
-rather than inventing numbers.
+rather than inventing numbers — every fetch here returns None / an
+empty history on failure, never a fabricated value.
 """
 
 import re
@@ -24,9 +25,19 @@ from urllib.error import URLError, HTTPError
 
 UA = {"User-Agent": "Mozilla/5.0 (compatible; portfolio-bi/1.0)"}
 
-FUND_URL = ("https://www.blackrock.com/ch/individual/en/products/229301/"
-            "blackrock-new-energy-e2-eur-fund")
-FUND_ISIN = "LU0171290074"
+# The fund page's performance-chart AJAX endpoint. The numeric id in the
+# path is specific to this fund's page (BlackRock generates it per
+# product) — if you point this at a different fund, view the fund's page
+# source and look for a "<id>.ajax?tab=chart" request to find its id.
+FUND_CHART_URL = ("https://www.blackrock.com/ch/individual/en/products/229301/"
+                   "blackrock-new-energy-e2-eur-fund/1489751357104.ajax?tab=chart")
+
+# Matches entries like:
+#   {x:Date.UTC(2026,6,8),y:Number((18.66).toFixed(2)),formattedX: "08-Jul-2026"}
+_NAV_ENTRY_RE = re.compile(
+    r'x:Date\.UTC\(\d+,\d+,\d+\),y:Number\(\(([0-9.]+)\)\.toFixed\(2\)\),'
+    r'formattedX:\s*"([^"]+)"'
+)
 
 # Yahoo Finance symbols -> friendly keys used by the macro layer
 YAHOO_SYMBOLS = {
@@ -45,25 +56,30 @@ def _get(url, timeout=30):
 
 
 def fetch_fund_nav():
-    """Return (nav, as_of) or (None, None) — never a fabricated value."""
+    """Return (latest_nav, as_of_iso, history). history is a list of
+    (iso_date, nav) tuples, oldest first, spanning the fund's full
+    published NAV series. On any failure: (None, None, []) — never a
+    fabricated value; the caller falls back to the last known NAV."""
     try:
-        html = _get(FUND_URL)
+        html = _get(FUND_CHART_URL)
     except (URLError, HTTPError, TimeoutError) as e:
         print(f"  ! fund fetch failed: {e}")
-        return None, None
-    idx = html.find(FUND_ISIN)
-    if idx == -1:
-        print("  ! ISIN not found — page layout may have changed")
-        return None, None
-    window = html[max(0, idx - 1500):idx]
-    dates = re.findall(r"\d{1,2}-[A-Za-z]{3}-\d{4}", window)
-    as_of = dates[-1] if dates else dt.date.today().isoformat()
-    nums = re.findall(r">\s*([0-9][0-9'.,]*\.\d{1,4})\s*<", window)
-    for n in nums:
-        v = float(n.replace("'", "").replace(",", ""))
-        if 0.01 < v < 100000:
-            return v, as_of
-    return None, None
+        return None, None, []
+    entries = _NAV_ENTRY_RE.findall(html)
+    if not entries:
+        print("  ! navData not found — page layout may have changed")
+        return None, None, []
+    history = []
+    for value, formatted in entries:
+        try:
+            iso = dt.datetime.strptime(formatted, "%d-%b-%Y").date().isoformat()
+            history.append((iso, float(value)))
+        except ValueError:
+            continue
+    if not history:
+        return None, None, []
+    as_of, latest = history[-1]
+    return latest, as_of, history
 
 
 def fetch_yahoo_chart(symbol, range_="6mo", interval="1d"):
@@ -97,9 +113,10 @@ def fetch_all():
         out[key], history[key] = latest, hist
         print(f"  {key}: {latest}  ({len(hist)} historical points)")
     print("Fetching fund NAV (BlackRock)…")
-    nav, as_of = fetch_fund_nav()
+    nav, as_of, nav_history = fetch_fund_nav()
     out["fund_nav"], out["fund_asof"] = nav, as_of
-    print(f"  NAV: {nav} ({as_of})")
+    history["fund_nav"] = nav_history
+    print(f"  NAV: {nav} ({as_of})  ({len(nav_history)} historical points)")
     return out, history
 
 
