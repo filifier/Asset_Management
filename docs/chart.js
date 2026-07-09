@@ -7,6 +7,10 @@
  * (nothing you can't read top to bottom and recompute by hand). Used by
  * both docs/index.html (public) and web/index.html (local dev) — they
  * just point SERIES_SOURCES at different relative paths.
+ *
+ * Lives in its own file (rather than inline in each dashboard) so both
+ * the "Dashboard" and "Analisi & Previsione" tabs can share one
+ * implementation without duplicating ~250 lines of chart code.
  */
 
 const SERIES_DEFS = [
