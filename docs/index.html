@@ -754,25 +754,10 @@ function buildPrivateSection() {
       });
     });
 
-    // ── detailed breakdown (concentration notes etc.) below ──
-    const signals = computePortfolioSignals(enriched, portfolioValue);
-    if (!signals) {
-      resultsEl.innerHTML = `<div id="private-placeholder">Nessuna posizione con prezzo valido — controlla le date d'acquisto.</div>`;
-      return;
-    }
-    resultsEl.innerHTML = "";
-    for (const s of signals) {
-      const row = document.createElement("div");
-      row.className = "signal";
-      row.innerHTML = `
-        <div class="mark ${s.bias}">${markSymbol[s.bias]}</div>
-        <div class="signal-body">
-          <span class="name">${s.name}</span><span class="reading">${s.reading}</span>
-          <div class="why">${s.why}</div>
-        </div>
-      `;
-      resultsEl.appendChild(row);
-    }
+    // The performance summary + per-holding cards above already convey
+    // P&L and concentration cleanly, so no duplicated signal list here.
+    resultsEl.innerHTML = priced.length ? "" :
+      `<div id="private-placeholder">Nessuna posizione con prezzo valido — controlla le date d'acquisto.</div>`;
   }
 
   // ---- refresh: re-fetch the latest published price history for the
