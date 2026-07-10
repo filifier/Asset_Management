@@ -221,6 +221,74 @@
   }
   .holding-row .hr-remove:hover { color: var(--caution); }
 
+  /* ── prominent search hero ── */
+  .search-hero {
+    background: var(--card); border: 1.5px solid var(--support);
+    border-radius: 14px; padding: 16px 18px; margin-bottom: 18px;
+    box-shadow: 0 2px 10px rgba(47,122,79,0.06);
+  }
+  .search-hero .sh-top {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px; gap: 10px;
+  }
+  .search-hero h3 { font-size: 15px; margin: 0; color: var(--ink); }
+  #pf-refresh {
+    font-size: 12px; font-weight: 600; color: var(--support);
+    background: var(--support-bg); border: 1px solid var(--support);
+    border-radius: 999px; padding: 5px 12px; cursor: pointer; white-space: nowrap;
+  }
+  #pf-refresh:hover { background: #dcecdf; }
+  #pf-refresh:disabled { opacity: 0.55; cursor: default; }
+  .search-box { position: relative; }
+  .search-box .s-icon {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    font-size: 16px; opacity: 0.45; pointer-events: none;
+  }
+  .search-box input {
+    width: 100%; font-size: 15px; padding: 13px 14px 13px 40px;
+    border: 1.5px solid var(--border); border-radius: 10px;
+    background: var(--bg); color: var(--ink); box-sizing: border-box;
+  }
+  .search-box input:focus {
+    outline: none; border-color: var(--support);
+    box-shadow: 0 0 0 3px rgba(47,122,79,0.15); background: var(--card);
+  }
+
+  /* ── portfolio performance summary ── */
+  .perf-summary {
+    display: flex; justify-content: space-between; align-items: center; gap: 14px;
+    background: var(--card); border: 1px solid var(--border);
+    border-left: 4px solid var(--neutral);
+    border-radius: 12px; padding: 16px 20px; margin-bottom: 14px;
+  }
+  .perf-summary.pos { border-left-color: var(--support); }
+  .perf-summary.neg { border-left-color: var(--caution); }
+  .perf-summary .perf-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .perf-summary .perf-value { font-size: 30px; font-weight: 800; line-height: 1.1; margin: 2px 0; }
+  .perf-summary .perf-value.pos { color: var(--support); }
+  .perf-summary .perf-value.neg { color: var(--caution); }
+  .perf-summary .perf-sub { font-size: 12.5px; color: var(--muted); }
+
+  /* ── holding cards (chosen securities + performance) ── */
+  .holding-card {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 16px; margin-bottom: 8px;
+  }
+  .holding-card .hc-name { font-size: 14px; font-weight: 700; }
+  .holding-card .hc-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .holding-card .hc-conc { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  .holding-card .hc-right { display: flex; align-items: center; gap: 14px; }
+  .holding-card .hc-pnl { font-size: 20px; font-weight: 800; white-space: nowrap; }
+  .holding-card .hc-pnl.pos { color: var(--support); }
+  .holding-card .hc-pnl.neg { color: var(--caution); }
+  .holding-card .hc-pnl.na { color: var(--muted); font-size: 14px; }
+  .holding-card .hr-remove {
+    background: none; border: none; color: var(--muted); font-size: 18px;
+    cursor: pointer; padding: 0 2px; line-height: 1;
+  }
+  .holding-card .hr-remove:hover { color: var(--caution); }
+
   #private-placeholder {
     font-size: 12.5px; color: var(--muted); font-style: italic; margin-top: 8px;
   }
@@ -461,25 +529,30 @@ function buildPrivateSection() {
     <div class="private-note">
       🔒 Calcolato nel tuo browser — questi valori non vengono mai salvati sul
       server né inviati da nessuna parte. Restano solo su questo dispositivo.
-      Cerca un titolo o ETF per nome o ticker, scegli la data d'acquisto, e vedi
-      la performance. Non servono le unità: bastano importo e data.
+      Non servono le unità: bastano importo e data d'acquisto.
     </div>
 
-    <div class="private-form" style="grid-template-columns:1fr; margin-bottom:14px">
+    <div class="search-hero">
+      <div class="sh-top">
+        <h3>Aggiungi una posizione</h3>
+        <button type="button" id="pf-refresh" title="Aggiorna ai prezzi più recenti disponibili">↻ Aggiorna prezzi</button>
+      </div>
+      <div class="search-box">
+        <span class="s-icon">🔍</span>
+        <input id="pf-search" type="text" autocomplete="off" placeholder="Cerca titolo, ETF o fondo — es. Apple, VWCE, BlackRock…">
+        <div id="pf-dropdown" class="search-dropdown" style="display:none"></div>
+      </div>
+      <div id="pf-selected"></div>
+    </div>
+
+    <div class="private-form" style="grid-template-columns:1fr; margin-bottom:16px">
       <div>
-        <label for="pf-value">Valore totale del portafoglio (€)</label>
+        <label for="pf-value">Valore totale del portafoglio (€) — opzionale, per la concentrazione</label>
         <input id="pf-value" type="number" min="0" step="any" placeholder="es. 50000">
       </div>
     </div>
 
-    <div class="search-wrap">
-      <label for="pf-search">Aggiungi una posizione — cerca titolo o ETF</label>
-      <input id="pf-search" type="text" autocomplete="off" placeholder="es. Apple, VWCE, Microsoft…">
-      <div id="pf-dropdown" class="search-dropdown" style="display:none"></div>
-    </div>
-
-    <div id="pf-selected"></div>
-
+    <div id="pf-perf"></div>
     <div class="holdings-list" id="pf-holdings"></div>
 
     <label class="remember-row">
@@ -493,7 +566,9 @@ function buildPrivateSection() {
   const searchInput = el.querySelector("#pf-search");
   const dropdown = el.querySelector("#pf-dropdown");
   const selectedBox = el.querySelector("#pf-selected");
+  const perfBox = el.querySelector("#pf-perf");
   const holdingsBox = el.querySelector("#pf-holdings");
+  const refreshBtn = el.querySelector("#pf-refresh");
   const rememberInput = el.querySelector("#pf-remember");
   const resultsEl = el.querySelector("#private-results");
   const headEl = el.querySelector(".private-head");
@@ -600,13 +675,16 @@ function buildPrivateSection() {
     validate();
   }
 
+  const eur = (n) => "€" + Math.round(n).toLocaleString("it-IT");
+
   // ---- holdings list + performance ----
   async function renderHoldings() {
     document.getElementById("private-badge")?.remove();
 
     if (!portfolioState.holdings.length) {
+      perfBox.innerHTML = "";
       holdingsBox.innerHTML = "";
-      resultsEl.innerHTML = `<div id="private-placeholder">Aggiungi almeno una posizione per vedere qui la performance del tuo portafoglio.</div>`;
+      resultsEl.innerHTML = `<div id="private-placeholder">Cerca e aggiungi almeno una posizione qui sopra per vedere la performance del tuo portafoglio.</div>`;
       return;
     }
 
@@ -616,21 +694,52 @@ function buildPrivateSection() {
       const hist = await getTickerHistory(h.symbol);
       const purchasePrice = navOnOrBefore(hist, h.purchaseDate);
       const currentPrice = hist.length ? hist[hist.length - 1][1] : null;
-      enriched.push({ ...h, purchasePrice, currentPrice });
+      const priced = purchasePrice > 0 && currentPrice > 0;
+      const marketValue = priced ? h.investedAmount * currentPrice / purchasePrice : null;
+      enriched.push({ ...h, purchasePrice, currentPrice, priced, marketValue });
     }
 
+    const portfolioValue = parseFloat(valueInput.value);
+    const priced = enriched.filter(h => h.priced);
+    const totalInvested = priced.reduce((s, h) => s + h.investedAmount, 0);
+    const totalValue = priced.reduce((s, h) => s + h.marketValue, 0);
+    const totalPnl = totalInvested ? (totalValue - totalInvested) / totalInvested * 100 : null;
+
+    // ── prominent portfolio-performance summary ──
+    if (priced.length) {
+      const cls = totalPnl == null ? "" : (totalPnl >= 0 ? "pos" : "neg");
+      const pnlStr = totalPnl == null ? "n/d" : `${totalPnl >= 0 ? "+" : ""}${totalPnl.toFixed(1)}%`;
+      const signals = computePortfolioSignals(enriched, portfolioValue) || [];
+      const score = signals.reduce((sum, s) => sum + s.points, 0);
+      perfBox.innerHTML = `
+        <div class="perf-summary ${cls}">
+          <div class="perf-main">
+            <div class="perf-label">Performance del portafoglio</div>
+            <div class="perf-value ${cls}">${pnlStr}</div>
+            <div class="perf-sub">${eur(totalInvested)} investiti → <strong>${eur(totalValue)}</strong> oggi${enriched.length > priced.length ? ` · ${enriched.length - priced.length} posizione/i senza prezzo` : ""}</div>
+          </div>
+          <span class="badge ${badgeClass(score)}">${pillarLabel(score)}</span>
+        </div>`;
+    } else {
+      perfBox.innerHTML = "";
+    }
+
+    // ── holding cards: chosen securities + their performance ──
     holdingsBox.innerHTML = enriched.map((h, i) => {
-      const priced = h.purchasePrice > 0 && h.currentPrice > 0;
-      const pnl = priced ? (h.currentPrice / h.purchasePrice - 1) * 100 : null;
+      const pnl = h.priced ? (h.currentPrice / h.purchasePrice - 1) * 100 : null;
       const pnlStr = pnl == null ? "n/d" : `${pnl >= 0 ? "+" : ""}${pnl.toFixed(0)}%`;
-      const pnlClass = pnl == null ? "" : (pnl >= 0 ? "positive" : "negative");
-      return `<div class="holding-row">
-        <div>
-          <div class="hr-name">${h.name}</div>
-          <div class="hr-meta">${h.symbol} · €${h.investedAmount.toLocaleString("it-IT")} · dal ${h.purchaseDate}</div>
+      const pnlClass = pnl == null ? "na" : (pnl >= 0 ? "pos" : "neg");
+      const conc = (h.priced && portfolioValue > 0)
+        ? `<div class="hc-conc">${(h.marketValue / portfolioValue * 100).toFixed(0)}% del portafoglio</div>` : "";
+      const dateFmt = h.purchaseDate.split("-").reverse().join("/");
+      return `<div class="holding-card">
+        <div class="hc-left">
+          <div class="hc-name">${h.name}</div>
+          <div class="hc-meta">${h.symbol} · ${eur(h.investedAmount)} investiti · dal ${dateFmt}</div>
+          ${conc}
         </div>
-        <div style="display:flex; align-items:center; gap:12px">
-          <span class="hr-pnl ${pnlClass}">${pnlStr}</span>
+        <div class="hc-right">
+          <span class="hc-pnl ${pnlClass}">${pnlStr}</span>
           <button type="button" class="hr-remove" data-idx="${i}" title="Rimuovi">×</button>
         </div>
       </div>`;
@@ -645,21 +754,12 @@ function buildPrivateSection() {
       });
     });
 
-    const portfolioValue = parseFloat(valueInput.value);
+    // ── detailed breakdown (concentration notes etc.) below ──
     const signals = computePortfolioSignals(enriched, portfolioValue);
     if (!signals) {
       resultsEl.innerHTML = `<div id="private-placeholder">Nessuna posizione con prezzo valido — controlla le date d'acquisto.</div>`;
       return;
     }
-
-    const score = signals.reduce((sum, s) => sum + s.points, 0);
-    const badge = document.createElement("span");
-    badge.id = "private-badge";
-    badge.className = `badge ${badgeClass(score)}`;
-    badge.style.marginLeft = "10px";
-    badge.textContent = `${pillarLabel(score)} (${score >= 0 ? "+" : ""}${score.toFixed(1)})`;
-    headEl.querySelector("h2").after(badge);
-
     resultsEl.innerHTML = "";
     for (const s of signals) {
       const row = document.createElement("div");
@@ -674,6 +774,21 @@ function buildPrivateSection() {
       resultsEl.appendChild(row);
     }
   }
+
+  // ---- refresh: re-fetch the latest published price history for the
+  // selected securities (static files are as fresh as the last data
+  // build; this clears the in-memory cache and re-reads them). ----
+  refreshBtn.addEventListener("click", async () => {
+    refreshBtn.disabled = true;
+    const orig = refreshBtn.textContent;
+    refreshBtn.textContent = "↻ Aggiorno…";
+    for (const k of Object.keys(tickerHistoryCache)) delete tickerHistoryCache[k];
+    analysisMacroHistory = null;
+    await renderHoldings();
+    if (latestCard) renderAnalysisTab(latestCard);
+    refreshBtn.textContent = "✓ Aggiornato";
+    setTimeout(() => { refreshBtn.textContent = orig; refreshBtn.disabled = false; }, 1600);
+  });
 
   valueInput.addEventListener("input", () => {
     portfolioState.portfolioValue = valueInput.value;
@@ -752,18 +867,9 @@ function pillarCard(p) {
 function render(card, meta) {
   const content = document.getElementById("content");
   content.innerHTML = "";
-
-  const topbar = document.createElement("div");
-  topbar.className = "refresh-row";
-  topbar.style.marginBottom = "16px";
-  topbar.innerHTML = `
-    <button id="refresh-btn" type="button">↻ Aggiorna dati di mercato</button>
-    <span class="updated-at" id="updated-at">${timeAgo(meta.loadedAt)}</span>
-  `;
-  content.appendChild(topbar);
-
+  // Refresh now lives inside the portfolio section ("↻ Aggiorna prezzi"),
+  // which re-fetches the selected securities' latest published data.
   content.appendChild(buildPrivateSection());
-
   renderAnalysisTab(card);
 }
 
@@ -944,11 +1050,9 @@ function switchView(view) {
 async function load() {
   const loading = document.getElementById("loading");
   const err = document.getElementById("error");
-  const btn = document.getElementById("refresh-btn");
 
   loading.style.display = "block";
   err.style.display = "none";
-  if (btn) btn.disabled = true;
 
   try {
     const [cardRes, navHistRes] = await Promise.all([
@@ -962,7 +1066,6 @@ async function load() {
     loading.style.display = "none";
     currentNav = card.meta.nav;
     render(card, { assetName: card.meta.asset_name, nav: card.meta.nav, loadedAt: new Date() });
-    document.getElementById("refresh-btn").addEventListener("click", load);
     document.getElementById("view-tabs").style.display = "flex";
   } catch (e) {
     loading.style.display = "none";
