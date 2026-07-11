@@ -350,6 +350,72 @@
   .reg-badge.yes { color: var(--support); background: var(--support-bg); }
   .reg-badge.no { color: var(--muted); background: var(--neutral-bg); }
   .reg-badge.vif-high { color: var(--caution); background: var(--caution-bg); }
+
+  /* ── plain-language interpretation ── */
+  .interp-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-left: 4px solid var(--support);
+    border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
+  }
+  .interp-card h2 { font-size: 15px; margin: 0 0 4px; }
+  .interp-card .ic-sub { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .interp-bullets { list-style: none; margin: 0; padding: 0; }
+  .interp-bullets li {
+    display: flex; gap: 11px; padding: 9px 0; font-size: 13.5px; line-height: 1.45;
+    border-top: 1px solid var(--border); color: var(--ink);
+  }
+  .interp-bullets li:first-child { border-top: none; }
+  .interp-bullets .ib-icon { flex: 0 0 22px; font-size: 16px; line-height: 1.3; }
+  .interp-close {
+    font-size: 12px; color: var(--muted); margin-top: 10px; font-style: italic;
+    border-top: 1px solid var(--border); padding-top: 10px;
+  }
+
+  /* ── collapsible technical detail ── */
+  .reg-details { margin-top: 6px; }
+  .reg-details summary {
+    cursor: pointer; font-size: 12px; color: var(--support); font-weight: 600;
+    padding: 4px 0; list-style: none; user-select: none;
+  }
+  .reg-details summary::-webkit-details-marker { display: none; }
+  .reg-details summary::before { content: "▸  "; }
+  .reg-details[open] summary::before { content: "▾  "; }
+
+  /* ── login / account ── */
+  .auth-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 24px; margin-bottom: 16px; max-width: 420px;
+  }
+  .auth-card h2 { font-size: 17px; margin: 0 0 4px; }
+  .auth-card .auth-sub { font-size: 12.5px; color: var(--muted); margin-bottom: 16px; line-height: 1.45; }
+  .auth-field { margin-bottom: 12px; }
+  .auth-field label { display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 4px; }
+  .auth-field input {
+    width: 100%; font-size: 14px; padding: 10px 12px; border: 1.5px solid var(--border);
+    border-radius: 9px; background: var(--bg); color: var(--ink); box-sizing: border-box;
+  }
+  .auth-field input:focus {
+    outline: none; border-color: var(--support); box-shadow: 0 0 0 3px rgba(47,122,79,0.15);
+  }
+  #auth-submit {
+    width: 100%; font-size: 14px; font-weight: 700; color: #fff; background: var(--support);
+    border: none; border-radius: 9px; padding: 11px; cursor: pointer; margin-top: 4px;
+  }
+  #auth-submit:disabled { opacity: 0.55; cursor: default; }
+  .auth-toggle { font-size: 12.5px; color: var(--muted); margin-top: 14px; text-align: center; }
+  .auth-toggle a { color: var(--support); font-weight: 600; cursor: pointer; text-decoration: underline; }
+  .auth-msg { font-size: 12.5px; margin-top: 12px; line-height: 1.4; }
+  .auth-msg.err { color: var(--caution); }
+  .auth-msg.ok { color: var(--support); }
+  .account-bar {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    font-size: 12.5px; color: var(--muted); margin-bottom: 16px;
+  }
+  .account-bar button {
+    font-size: 12px; font-weight: 600; color: var(--ink);
+    background: var(--neutral-bg); border: 1px solid var(--border);
+    border-radius: 999px; padding: 5px 12px; cursor: pointer;
+  }
 </style>
 </head>
 <body>
@@ -373,6 +439,8 @@
   <p class="disclaimer">Uso personale e informativo. Non è consulenza finanziaria.</p>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="auth.js"></script>
 <script src="chart.js"></script>
 <script src="ols.js"></script>
 <script>
@@ -505,18 +573,38 @@ async function getTickerHistory(symbol) {
   return data;
 }
 
-// Portfolio state lives entirely in the browser (localStorage under
-// STORAGE_KEY when "remember" is on). Each holding: {symbol, name,
-// exchange, investedAmount, purchaseDate}. Prices/history are looked up
-// on demand from the pre-published per-ticker files.
-let portfolioState = { portfolioValue: "", holdings: [], remember: false };
+// Portfolio state. Each holding: {symbol, name, exchange, investedAmount,
+// purchaseDate}. When login is configured, this is stored per-user in
+// Supabase (cloud); otherwise it falls back to localStorage (dev). Prices/
+// history are always looked up from the pre-published per-ticker files.
+let portfolioState = { portfolioValue: "", holdings: [] };
+let currentUser = null;
+let _saveTimer = null;
 
 function persistPortfolio() {
-  if (portfolioState.remember) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolioState));
+  const payload = { portfolioValue: portfolioState.portfolioValue, holdings: portfolioState.holdings };
+  if (authConfigured() && currentUser) {
+    // debounce cloud writes so rapid edits don't spam the DB
+    clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(() => cloudSavePortfolio(payload), 500);
   } else {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   }
+}
+
+// Load the portfolio for the current context (cloud when logged in, else
+// localStorage). Called before rendering the portfolio section.
+async function loadPortfolioState() {
+  let d = null;
+  if (authConfigured() && currentUser) {
+    d = await cloudLoadPortfolio();
+  } else {
+    try { d = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch (e) { d = null; }
+  }
+  portfolioState = {
+    portfolioValue: (d && d.portfolioValue) || "",
+    holdings: (d && Array.isArray(d.holdings)) ? d.holdings : [],
+  };
 }
 
 function buildPrivateSection() {
@@ -524,12 +612,19 @@ function buildPrivateSection() {
   el.className = "private";
   const todayIso = new Date().toISOString().slice(0, 10);
 
+  const accountBar = (authConfigured() && currentUser)
+    ? `<div class="account-bar">
+         <span>Accesso come <strong>${currentUser.email}</strong> — il portafoglio è salvato nel tuo account.</span>
+         <button type="button" id="pf-logout">Esci</button>
+       </div>` : "";
+
   el.innerHTML = `
-    <div class="private-head"><h2>Il tuo portafoglio (privato)</h2></div>
+    ${accountBar}
+    <div class="private-head"><h2>Il tuo portafoglio</h2></div>
     <div class="private-note">
-      🔒 Calcolato nel tuo browser — questi valori non vengono mai salvati sul
-      server né inviati da nessuna parte. Restano solo su questo dispositivo.
-      Non servono le unità: bastano importo e data d'acquisto.
+      Il tuo portafoglio è salvato in modo sicuro nel tuo account e lo ritrovi
+      su qualsiasi dispositivo dopo il login. Non servono le unità: bastano
+      importo e data d'acquisto.
     </div>
 
     <div class="search-hero">
@@ -554,13 +649,11 @@ function buildPrivateSection() {
 
     <div id="pf-perf"></div>
     <div class="holdings-list" id="pf-holdings"></div>
-
-    <label class="remember-row">
-      <input type="checkbox" id="pf-remember">
-      Ricorda il portafoglio solo su questo dispositivo
-    </label>
     <div id="private-results"></div>
   `;
+
+  const logoutBtn = el.querySelector("#pf-logout");
+  if (logoutBtn) logoutBtn.addEventListener("click", async () => { await authSignOut(); });
 
   const valueInput = el.querySelector("#pf-value");
   const searchInput = el.querySelector("#pf-search");
@@ -569,7 +662,6 @@ function buildPrivateSection() {
   const perfBox = el.querySelector("#pf-perf");
   const holdingsBox = el.querySelector("#pf-holdings");
   const refreshBtn = el.querySelector("#pf-refresh");
-  const rememberInput = el.querySelector("#pf-remember");
   const resultsEl = el.querySelector("#private-results");
   const headEl = el.querySelector(".private-head");
 
@@ -780,25 +872,10 @@ function buildPrivateSection() {
     persistPortfolio();
     renderHoldings();
   });
-  rememberInput.addEventListener("change", () => {
-    portfolioState.remember = rememberInput.checked;
-    persistPortfolio();
-  });
 
-  // ---- restore saved state ----
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) {
-    try {
-      const d = JSON.parse(saved);
-      portfolioState = {
-        portfolioValue: d.portfolioValue || "",
-        holdings: Array.isArray(d.holdings) ? d.holdings : [],
-        remember: true,
-      };
-      valueInput.value = portfolioState.portfolioValue;
-      rememberInput.checked = true;
-    } catch (e) { /* ignore malformed local data */ }
-  }
+  // portfolioState is already loaded (cloud or localStorage) by
+  // loadPortfolioState() before this section is built — just reflect it.
+  valueInput.value = portfolioState.portfolioValue || "";
   renderHoldings();
 
   return el;
@@ -844,18 +921,94 @@ function pillarCard(p) {
   return el;
 }
 
-// The "Dashboard" tab is now the private portfolio, full stop — the
-// user builds their holdings here (including the BlackRock fund, added
-// like any other asset). Everything analytical (chart, per-asset
-// regressions, market context) lives in the "Analisi & Previsione" tab,
-// driven by this same portfolio. No server-defined asset sits at the top.
-function render(card, meta) {
+// Login / signup screen, shown in the "Il tuo portafoglio" tab when
+// login is configured and no one is authenticated. Mandatory login: the
+// personal portfolio (and the analysis that depends on it) needs an
+// account.
+function renderLoginScreen() {
   const content = document.getElementById("content");
   content.innerHTML = "";
-  // Refresh now lives inside the portfolio section ("↻ Aggiorna prezzi"),
-  // which re-fetches the selected securities' latest published data.
+  document.getElementById("analysis-content").innerHTML =
+    `<div class="chart-card"><div class="private-note">Accedi nella tab "Il tuo portafoglio" per costruire il portafoglio e vedere qui l'analisi.</div></div>`;
+
+  let mode = "signin"; // or "signup"
+  const card = document.createElement("div");
+  card.className = "auth-card";
+
+  function paint() {
+    card.innerHTML = `
+      <h2>${mode === "signin" ? "Accedi" : "Crea un account"}</h2>
+      <div class="auth-sub">Il tuo portafoglio viene salvato nel tuo account e lo ritrovi su ogni dispositivo. ${mode === "signin" ? "Non hai un account?" : "Hai già un account?"} <span class="auth-toggle" style="display:inline"><a id="auth-switch">${mode === "signin" ? "Registrati" : "Accedi"}</a></span></div>
+      <div class="auth-field">
+        <label for="auth-email">Email</label>
+        <input id="auth-email" type="email" autocomplete="email" placeholder="tu@esempio.com">
+      </div>
+      <div class="auth-field">
+        <label for="auth-password">Password</label>
+        <input id="auth-password" type="password" autocomplete="${mode === "signin" ? "current-password" : "new-password"}" placeholder="almeno 6 caratteri">
+      </div>
+      <button id="auth-submit" type="button">${mode === "signin" ? "Accedi" : "Registrati"}</button>
+      <div class="auth-msg" id="auth-msg"></div>
+    `;
+    const email = card.querySelector("#auth-email");
+    const pw = card.querySelector("#auth-password");
+    const submit = card.querySelector("#auth-submit");
+    const msg = card.querySelector("#auth-msg");
+
+    card.querySelector("#auth-switch").addEventListener("click", () => {
+      mode = mode === "signin" ? "signup" : "signin"; paint();
+    });
+
+    submit.addEventListener("click", async () => {
+      const e = email.value.trim(), p = pw.value;
+      if (!e || p.length < 6) { msg.className = "auth-msg err"; msg.textContent = "Inserisci email e una password di almeno 6 caratteri."; return; }
+      submit.disabled = true; msg.className = "auth-msg"; msg.textContent = "Attendi…";
+      const res = mode === "signin" ? await authSignIn(e, p) : await authSignUp(e, p);
+      if (res.error) {
+        submit.disabled = false; msg.className = "auth-msg err"; msg.textContent = res.error.message;
+        return;
+      }
+      if (mode === "signup" && !res.session) {
+        // email confirmation is on — user created but no session yet
+        msg.className = "auth-msg ok";
+        msg.textContent = "Ti abbiamo inviato un'email di conferma. Aprila, conferma l'account, poi torna qui e accedi.";
+        submit.disabled = false;
+        return;
+      }
+      // success (session created) → authOnChange will re-render the app
+    });
+
+    pw.addEventListener("keydown", (ev) => { if (ev.key === "Enter") submit.click(); });
+  }
+  paint();
+  content.appendChild(card);
+}
+
+// The "Il tuo portafoglio" tab is the private portfolio itself (login-
+// gated). Everything analytical (chart, per-asset regressions, market
+// context) lives in the "Analisi & Previsione" tab, driven by this same
+// portfolio.
+function render(card) {
+  const content = document.getElementById("content");
+  content.innerHTML = "";
+  // Refresh lives inside the portfolio section ("↻ Aggiorna prezzi").
   content.appendChild(buildPrivateSection());
   renderAnalysisTab(card);
+}
+
+let appCard = null;  // last-loaded market-data card, so we can re-render on login/logout
+
+// Decides what the app shows based on auth: the login screen when login
+// is configured and nobody's signed in, else the portfolio (after
+// loading it from the cloud / localStorage).
+async function renderGated() {
+  if (!appCard) return;
+  if (authConfigured() && !currentUser) {
+    renderLoginScreen();
+    return;
+  }
+  await loadPortfolioState();
+  render(appCard);
 }
 
 // Parses the factor_regression pillar's existing signal text back into a
@@ -902,25 +1055,110 @@ function regressionTableRows(factors) {
 function regressionTableCard(title, narrative, subtitle, factors) {
   const card = document.createElement("div");
   card.className = "chart-card";
+  // The plain-language narrative stays visible; the dense coefficient
+  // table is tucked into a collapsible <details> so the default view
+  // stays light for a non-expert (streamlining), while the full numbers
+  // remain one click away for anyone who wants them.
   card.innerHTML = `
     <h2>${title}</h2>
     ${narrative ? `<div class="private-note" style="font-weight:600;color:var(--ink)">${narrative}</div>` : ""}
     ${subtitle ? `<div class="private-note">${subtitle}</div>` : ""}
-    <div class="reg-table-wrap">
-      <table class="reg-table">
-        <thead><tr>
-          <th>Fattore</th><th>Coefficiente</th><th>p-value</th><th>Significativo</th><th>VIF</th>
-        </tr></thead>
-        <tbody>${regressionTableRows(factors)}</tbody>
-      </table>
-    </div>
-    <div class="private-note" style="margin-top:10px">
-      Sensibilità storica del rendimento giornaliero dell'asset a ciascun fattore. Verde/rosso =
-      relazione statisticamente significativa (p&lt;0.05) positiva/negativa. VIF alto (&gt;10) = il
-      coefficiente è poco affidabile per collinearità con un altro fattore. Non è una previsione.
-    </div>
+    <details class="reg-details">
+      <summary>Mostra i coefficienti (dettaglio tecnico)</summary>
+      <div class="reg-table-wrap">
+        <table class="reg-table">
+          <thead><tr>
+            <th>Fattore</th><th>Coefficiente</th><th>p-value</th><th>Significativo</th><th>VIF</th>
+          </tr></thead>
+          <tbody>${regressionTableRows(factors)}</tbody>
+        </table>
+      </div>
+      <div class="private-note" style="margin-top:10px">
+        Sensibilità storica del rendimento giornaliero dell'asset a ciascun fattore. Verde/rosso =
+        relazione statisticamente significativa (p&lt;0.05) positiva/negativa. VIF alto (&gt;10) = il
+        coefficiente è poco affidabile per collinearità con un altro fattore. Non è una previsione.
+      </div>
+    </details>
   `;
   return card;
+}
+
+// ── Plain-language interpretation of the whole picture ──
+// Reads the market-context pillars (VIX level/trend, US 10Y) and the
+// aggregated significant factors across the portfolio's regressions,
+// and turns them into a few general bullet points for a user who has no
+// time to read tables. GENERAL (across variables), not one-per-factor.
+function findSignalReading(card, pillarKey, signalName) {
+  const p = card.pillars.find(x => x.key === pillarKey);
+  if (!p) return null;
+  const s = p.signals.find(x => x.name.toUpperCase() === signalName.toUpperCase());
+  return s ? s.reading : null;
+}
+
+function buildInterpretationBullets(card, regressionResults) {
+  const bullets = [];
+
+  // 1) market volatility / mood (VIX level + recent trend)
+  const vixLevel = parseFloat(findSignalReading(card, "macro", "VIX") || "");
+  const vixTrend = findSignalReading(card, "outlook", "VIX") || "";
+  if (!isNaN(vixLevel)) {
+    const mood = vixLevel <= 16 ? "basso: clima di mercato calmo, propenso al rischio"
+               : vixLevel <= 24 ? "nella media" : "alto: clima di mercato teso";
+    const dir = /rising/.test(vixTrend) ? ", ed è salito nell'ultimo mese"
+              : /falling/.test(vixTrend) ? ", ed è sceso nell'ultimo mese" : "";
+    bullets.push({ icon: "🌡️", text: `<strong>Volatilità di mercato:</strong> l'indice della paura (VIX) è ${mood}${dir}.` });
+  }
+
+  // 2) interest rates (US 10Y level + trend)
+  const us10y = parseFloat((findSignalReading(card, "macro", "US 10Y") || "").replace("%", ""));
+  const rateTrend = findSignalReading(card, "outlook", "US 10Y") || "";
+  if (!isNaN(us10y)) {
+    const dir = /rising/.test(rateTrend) ? "in leggera salita"
+              : /falling/.test(rateTrend) ? "in leggero calo" : "stabile";
+    const effect = /rising/.test(rateTrend)
+        ? "tassi che salgono pesano di più sui titoli growth/tech e sui fondi a lunga scadenza"
+        : /falling/.test(rateTrend)
+        ? "tassi che scendono tendono ad alleggerire la pressione sui titoli growth"
+        : "i tassi non stanno spingendo in una direzione netta";
+    bullets.push({ icon: "🏦", text: `<strong>Tassi d'interesse:</strong> il rendimento USA a 10 anni è al ${us10y.toFixed(1)}% ed è ${dir} — ${effect}.` });
+  }
+
+  // 3) what actually moves the user's portfolio (aggregate reliable factors)
+  const pos = new Set(), neg = new Set();
+  for (const r of regressionResults) {
+    if (!r.result || r.result.error) continue;
+    for (const [k, v] of Object.entries(r.result.factors)) {
+      const reliable = v.pvalue < 0.05 && (v.vif == null || v.vif < 10);
+      if (reliable && v.coef > 0) pos.add(OLS_FACTOR_LABELS[k] || k);
+      if (reliable && v.coef < 0) neg.add(OLS_FACTOR_LABELS[k] || k);
+    }
+  }
+  if (pos.size || neg.size) {
+    const parts = [];
+    if (pos.size) parts.push(`si muove storicamente insieme a <strong>${[...pos].join(", ")}</strong>`);
+    if (neg.size) parts.push(`tende a soffrire quando salgono <strong>${[...neg].join(", ")}</strong>`);
+    bullets.push({ icon: "📊", text: `<strong>Cosa muove i tuoi titoli:</strong> il portafoglio ${parts.join("; ")}.` });
+  } else if (regressionResults.length) {
+    bullets.push({ icon: "📊", text: `<strong>Cosa muove i tuoi titoli:</strong> si muovono soprattutto per ragioni proprie, poco legate ai fattori macro tracciati qui.` });
+  }
+
+  return bullets;
+}
+
+function buildInterpretationCard(card, regressionResults) {
+  const bullets = buildInterpretationBullets(card, regressionResults);
+  if (!bullets.length) return null;
+  const el = document.createElement("div");
+  el.className = "interp-card";
+  el.innerHTML = `
+    <h2>In parole semplici — cosa dicono questi dati</h2>
+    <div class="ic-sub">Una sintesi del contesto di mercato di oggi e di come si lega al tuo portafoglio.</div>
+    <ul class="interp-bullets">
+      ${bullets.map(b => `<li><span class="ib-icon">${b.icon}</span><span class="ib-text">${b.text}</span></li>`).join("")}
+    </ul>
+    <div class="interp-close">Sono una fotografia del presente e relazioni storiche, non previsioni. Servono a darti contesto — la decisione resta tua.</div>
+  `;
+  return el;
 }
 
 // Parse the static portfolio-level regression out of scorecard.json's
@@ -974,32 +1212,45 @@ async function renderAnalysisTab(card) {
     extraSeries: picked,
   });
 
-  // ── regression(s): one per selected asset, computed in the browser ──
+  // ── compute a regression per selected asset (in the browser) ──
+  const regressionResults = [];
   if (picked.length && analysisMacroHistory) {
+    for (const asset of picked) {
+      regressionResults.push({ label: asset.label, result: runAssetRegression(asset.history, analysisMacroHistory) });
+    }
+  }
+
+  // ── plain-language interpretation, prominent, right after the chart ──
+  if (regressionResults.length || card.pillars.some(p => p.key === "macro")) {
+    const interp = buildInterpretationCard(card, regressionResults);
+    if (interp) el.appendChild(interp);
+  }
+
+  // ── per-asset regression detail (narrative visible, table collapsible) ──
+  if (regressionResults.length) {
     const intro = document.createElement("div");
     intro.className = "private-note";
     intro.style.margin = "4px 0 0";
-    intro.innerHTML = `<strong>Una regressione OLS per ogni titolo del tuo portafoglio</strong> — quanto impatto ha storicamente ogni fattore macro sul suo rendimento giornaliero. Calcolata nel tuo browser sui dati pubblicati, aggiornata quando cambi il portafoglio.`;
+    intro.innerHTML = `<strong>Dettaglio per titolo</strong> — una regressione OLS per ciascun titolo del tuo portafoglio: quanto impatto ha storicamente ogni fattore macro sul suo rendimento giornaliero. Calcolata nel tuo browser, aggiornata quando cambi il portafoglio.`;
     el.appendChild(intro);
 
-    for (const asset of picked) {
-      const result = runAssetRegression(asset.history, analysisMacroHistory);
+    for (const { label, result } of regressionResults) {
       if (result.error) {
         const c = document.createElement("div");
         c.className = "chart-card";
-        c.innerHTML = `<h2>${asset.label}</h2><div class="private-note">${result.error}</div>`;
+        c.innerHTML = `<h2>${label}</h2><div class="private-note">${result.error}</div>`;
         el.appendChild(c);
         continue;
       }
-      const narrative = regressionNarrative(result, asset.label);
+      const narrative = regressionNarrative(result, label);
       const subtitle = `Regressione OLS sui rendimenti giornalieri — R²=${result.r2.toFixed(2)} (adj. ${result.adjR2.toFixed(2)}), n=${result.n}. R² modesto è normale: i mercati non sono spiegati bene da un modello lineare.`;
-      el.appendChild(regressionTableCard(`${asset.label} — analisi fattoriale`, narrative, subtitle, result.factors));
+      el.appendChild(regressionTableCard(`${label} — analisi fattoriale`, narrative, subtitle, result.factors));
     }
   } else {
     const c = document.createElement("div");
     c.className = "chart-card";
     c.innerHTML = `<h2>Analisi fattoriale (regressione OLS)</h2>
-      <div class="private-note">Aggiungi almeno un titolo al tuo portafoglio nella tab "Il tuo portafoglio" per vedere qui una regressione OLS dedicata per ciascun asset, più il grafico con i tuoi titoli.</div>`;
+      <div class="private-note">Aggiungi almeno un titolo al tuo portafoglio nella tab "Il tuo portafoglio" per vedere qui l'interpretazione, il grafico con i tuoi titoli e una regressione OLS dedicata per ciascun asset.</div>`;
     el.appendChild(c);
   }
 
@@ -1050,8 +1301,18 @@ async function load() {
     navHistory = navHistRes.ok ? await navHistRes.json() : [];
     loading.style.display = "none";
     currentNav = card.meta.nav;
-    render(card, { assetName: card.meta.asset_name, nav: card.meta.nav, loadedAt: new Date() });
+    appCard = card;
     document.getElementById("view-tabs").style.display = "flex";
+
+    if (authConfigured()) {
+      if (!window.supabase) throw new Error("Impossibile caricare il modulo di login (Supabase SDK).");
+      // onAuthStateChange fires INITIAL_SESSION immediately with the
+      // restored session (or null) — that drives the first render, and
+      // every later sign-in / sign-out re-renders too.
+      authOnChange(async (user) => { currentUser = user; await renderGated(); });
+    } else {
+      await renderGated();  // localStorage fallback (dev / not configured)
+    }
   } catch (e) {
     loading.style.display = "none";
     err.style.display = "block";

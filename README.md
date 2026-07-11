@@ -232,13 +232,42 @@ Per questo:
   analitico, guidato dal portafoglio: il grafico con i tuoi titoli, **una
   regressione OLS per ciascun asset** (quanto impatto ha ogni fattore macro),
   e il contesto di mercato (livello e trend dei fattori macro oggi).
-- Tutto avviene **interamente in JavaScript** — nessun dato personale viene
-  inviato a un server né salvato nel repository. Se spunti "ricorda", il
-  portafoglio resta solo nel `localStorage` del tuo browser. Vedi sotto
-  "Ricerca titoli" per come funziona senza chiamate di rete live.
+- I calcoli (P&L, concentrazione, regressioni) avvengono **interamente nel
+  browser** — i dati di mercato restano dati pubblici, nessuno di essi passa
+  da un nostro server. Il portafoglio dell'utente (importi, date, titoli)
+  viene invece **salvato nel suo account** via Supabase, per ritrovarlo su
+  ogni dispositivo (vedi "Login e cloud" sotto).
 - `web/` è la dashboard di **sviluppo locale**: mostra tutti i pilastri
   usando i dati reali da `data/position.json`, comoda per uso personale sul
   tuo Mac.
+
+## Login e cloud (Supabase)
+
+La dashboard pubblica richiede **login** (email + password) per usare la parte
+personale: il portafoglio si salva nel cloud legato all'account, così non va
+rifatto ad ogni accesso e si ritrova su qualsiasi dispositivo.
+
+L'infrastruttura è **Supabase** (Backend-as-a-Service), scelto perché il sito è
+statico (GitHub Pages, nessun server nostro): il browser parla direttamente a
+Supabase, che gestisce autenticazione e un database Postgres.
+
+- `docs/auth.js` — integrazione client: login/signup/logout + salva/carica il
+  portafoglio. Contiene `SUPABASE_URL` e `SUPABASE_ANON_KEY`: sono valori
+  **pubblici** (la anon key è progettata per stare nel JS del client). La
+  sicurezza è garantita dalla **Row-Level Security** sul DB, non dal segreto
+  della chiave.
+- Tabella `portfolios` (una riga JSONB per utente, `user_id` = `auth.uid()`)
+  con policy RLS che permettono a ciascuno di leggere/scrivere **solo la
+  propria** riga. Lo SQL di setup è nella cronologia del progetto.
+- Auth: email/password. La conferma via email è disattivata (`autoconfirm`)
+  per registrazione immediata; per riattivarla in produzione basta collegare
+  un provider SMTP — `docs/index.html` gestisce già il messaggio "conferma la
+  mail". `docs/data/nav_history.json` resta pubblico (dato di mercato).
+
+Nota privacy: rispetto alle versioni precedenti (portafoglio solo in
+`localStorage`), ora il portafoglio **viene salvato nel cloud** legato
+all'account. Resta privato (solo l'utente vi accede, protetto da password +
+RLS), ma non è più "mai fuori dal dispositivo".
 
 ## Ricerca titoli — perché una lista pre-scaricata, non live
 
