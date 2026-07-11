@@ -298,6 +298,23 @@
     border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
   }
   .chart-card h2 { font-size: 15px; margin: 0 0 4px; }
+
+  .analysis-section {
+    display: flex; align-items: baseline; gap: 10px;
+    margin: 28px 0 12px;
+  }
+  .analysis-section:first-of-type { margin-top: 22px; }
+  .analysis-section .as-num {
+    flex: 0 0 auto; width: 24px; height: 24px; border-radius: 50%;
+    background: var(--ink); color: var(--card);
+    font-size: 12px; font-weight: 700; line-height: 24px; text-align: center;
+  }
+  .analysis-section .as-text { flex: 1 1 auto; }
+  .analysis-section h1 { font-size: 16px; margin: 0; color: var(--ink); }
+  .analysis-section .as-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .analysis-section .as-rule {
+    border: none; border-top: 1px solid var(--border); margin: 8px 0 0;
+  }
   .chart-controls {
     display: flex; gap: 6px; margin: 10px 0;
   }
@@ -1487,6 +1504,15 @@ function buildChatCard() {
   return card;
 }
 
+// Header for one of the 3 main methodology sections in the Analysis tab.
+function buildSectionHeader(num, title, subtitle) {
+  const el = document.createElement("div");
+  el.className = "analysis-section";
+  el.innerHTML = `<span class="as-num">${num}</span>
+    <span class="as-text"><h1>${title}</h1><div class="as-sub">${subtitle}</div><hr class="as-rule"></span>`;
+  return el;
+}
+
 let analysisMacroHistory = null;
 let analysisFFFactors = null;
 
@@ -1559,35 +1585,20 @@ async function renderAnalysisTab(card) {
 
   chatContext = { card, holdings: chatHoldings, factorsPos: [...cPos], factorsNeg: [...cNeg], regressionByAsset: regressionResults, technicals: techByAsset };
 
-  // ── Fama-French-Carhart factor decomposition (portfolio-level), headline ──
-  const pricedForFF = chatHoldings.filter(h => h.priced);
-  const totalMV = pricedForFF.reduce((s, h) => s + h.marketValue, 0);
-  if (pricedForFF.length && totalMV > 0 && analysisFFFactors && analysisFFFactors.length) {
-    const ffHoldings = pricedForFF.map(h => ({
-      weight: h.marketValue / totalMV,
-      history: tickerHistoryCache[h.symbol] || [],
-    }));
-    const portRet = buildPortfolioReturns(ffHoldings);
-    const ffRes = runCarhartRegression(portRet, analysisFFFactors);
-    el.appendChild(buildCarhartCard(ffRes));
-  }
-
-  // ── technical / statistical indicators ──
-  const techCard = buildTechnicalCard(techByAsset);
-  if (techCard) el.appendChild(techCard);
-
-  // ── plain-language interpretation, prominent, right after the chart ──
+  // ── plain-language interpretation, prominent, right after the chart:
+  // a cross-cutting executive summary before the 3 detailed sections ──
   if (regressionResults.length || card.pillars.some(p => p.key === "macro")) {
     const interp = buildInterpretationCard(card, regressionResults);
     if (interp) el.appendChild(interp);
   }
 
-  // ── per-asset regression detail (narrative visible, table collapsible) ──
+  // ═══ SECTION 1 — Regressione OLS: sensibilità di ogni titolo ai fattori macro ═══
+  el.appendChild(buildSectionHeader(1, "Regressione OLS", "Quanto ogni titolo si è storicamente mosso insieme a tassi, VIX, oro, petrolio e dollaro."));
   if (regressionResults.length) {
     const intro = document.createElement("div");
     intro.className = "private-note";
-    intro.style.margin = "4px 0 0";
-    intro.innerHTML = `<strong>Dettaglio per titolo</strong> — una regressione OLS per ciascun titolo del tuo portafoglio: quanto impatto ha storicamente ogni fattore macro sul suo rendimento giornaliero. Calcolata nel tuo browser, aggiornata quando cambi il portafoglio.`;
+    intro.style.margin = "4px 0 12px";
+    intro.innerHTML = `Una regressione OLS per ciascun titolo del tuo portafoglio: quanto impatto ha storicamente ogni fattore macro sul suo rendimento giornaliero. Calcolata nel tuo browser, aggiornata quando cambi il portafoglio.`;
     el.appendChild(intro);
 
     for (const { label, result } of regressionResults) {
@@ -1605,20 +1616,51 @@ async function renderAnalysisTab(card) {
   } else {
     const c = document.createElement("div");
     c.className = "chart-card";
-    c.innerHTML = `<h2>Analisi fattoriale (regressione OLS)</h2>
-      <div class="private-note">Aggiungi almeno un titolo al tuo portafoglio nella tab "Il tuo portafoglio" per vedere qui l'interpretazione, il grafico con i tuoi titoli e una regressione OLS dedicata per ciascun asset.</div>`;
+    c.innerHTML = `<div class="private-note">Aggiungi almeno un titolo al tuo portafoglio nella tab "Il tuo portafoglio" per vedere qui la regressione OLS dedicata per ciascun asset.</div>`;
     el.appendChild(c);
   }
 
-  // ── market context: current levels + recent trend of the macro
-  // factors (from scorecard.json — market data, not personal). Same
-  // signals the regressions above are run against. ──
+  // ═══ SECTION 2 — Fama-French-Carhart: il portafoglio contro i 4 fattori di stile accademici ═══
+  el.appendChild(buildSectionHeader(2, "Fama-French-Carhart", "Il portafoglio nel suo complesso, letto con i fattori di stile che il mondo accademico usa per spiegare i rendimenti azionari."));
+  const pricedForFF = chatHoldings.filter(h => h.priced);
+  const totalMV = pricedForFF.reduce((s, h) => s + h.marketValue, 0);
+  if (pricedForFF.length && totalMV > 0 && analysisFFFactors && analysisFFFactors.length) {
+    const ffHoldings = pricedForFF.map(h => ({
+      weight: h.marketValue / totalMV,
+      history: tickerHistoryCache[h.symbol] || [],
+    }));
+    const portRet = buildPortfolioReturns(ffHoldings);
+    const ffRes = runCarhartRegression(portRet, analysisFFFactors);
+    el.appendChild(buildCarhartCard(ffRes));
+  } else {
+    const c = document.createElement("div");
+    c.className = "chart-card";
+    c.innerHTML = `<div class="private-note">Aggiungi almeno un titolo prezzato al tuo portafoglio per vedere qui la decomposizione Fama-French-Carhart.</div>`;
+    el.appendChild(c);
+  }
+
+  // ═══ SECTION 3 — Indicatori tecnici: trend e rischio letti dal grafico prezzi ═══
+  el.appendChild(buildSectionHeader(3, "Indicatori tecnici", "Il comportamento recente dei prezzi di ogni titolo: forza del trend, volatilità e rischio di movimenti estremi."));
+  const techCard = buildTechnicalCard(techByAsset);
+  if (techCard) {
+    el.appendChild(techCard);
+  } else {
+    const c = document.createElement("div");
+    c.className = "chart-card";
+    c.innerHTML = `<div class="private-note">Aggiungi almeno un titolo con abbastanza storico (40+ giorni) per vedere qui gli indicatori tecnici.</div>`;
+    el.appendChild(c);
+  }
+
+  // ── shared macro context: current levels + recent trend of the macro
+  // factors (from scorecard.json — market data, not personal). This is
+  // the same data Section 1's OLS regressions run against, and what
+  // drives Section 3's volatility regime. ──
   const contextPillars = card.pillars.filter(p => p.key === "macro" || p.key === "outlook");
   if (contextPillars.length) {
     const ctxIntro = document.createElement("div");
     ctxIntro.className = "private-note";
     ctxIntro.style.margin = "18px 0 6px";
-    ctxIntro.innerHTML = `<strong>Contesto di mercato oggi</strong> — livello attuale e trend recente dei fattori macro sopra. Questi sono i dati con cui si incrocia il tuo portafoglio.`;
+    ctxIntro.innerHTML = `<strong>Contesto di mercato oggi</strong> — livello attuale e trend recente dei fattori macro. Sono gli stessi dati incrociati nella Sezione 1 (regressione OLS) e collegati al regime di volatilità della Sezione 3 (indicatori tecnici).`;
     el.appendChild(ctxIntro);
 
     const legend = document.createElement("div");
