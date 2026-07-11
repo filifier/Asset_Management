@@ -152,20 +152,41 @@ entrano come **variazione di livello** (differenza prima, non %) perché
 possono attraversare lo zero — una "% di rendimento" su uno spread non ha
 senso. Vedi `RATE_LIKE_FACTORS` in `engine/regression.py`.
 
-## Due tab: Dashboard e Analisi & Previsione
+## Tre tab: Portafoglio, Analisi & Previsione, Assistente
 
-La dashboard è divisa in due viste, selezionabili con i pulsanti in alto:
+La dashboard pubblica è divisa in tre viste:
 
-- **Dashboard** — i pillar descrittivi (asset momentum, macro context, macro
-  outlook, la tua posizione) più il riepilogo. Corta e leggibile.
-- **Analisi & Previsione** — il grafico "Andamento" e le regressioni
-  fattoriali, la parte più statistica/matematica, separata così da non
-  appesantire la vista principale. **Reagisce al portafoglio**: quando
-  l'utente aggiunge/rimuove titoli nella tab Dashboard, il grafico mostra
-  quei titoli come linee asset e compare **una regressione OLS dedicata per
-  ciascuno** (quanto impatto ha ogni fattore macro su quel titolo).
+- **Il tuo portafoglio** — la parte personale (login-gated): componi il
+  portafoglio, vedi performance e concentrazione.
+- **Analisi & Previsione** — la parte **quant pura**, guidata dal portafoglio:
+  il grafico "Andamento", l'**analisi fattoriale accademica Fama-French-Carhart**
+  (vedi sotto), una regressione OLS macro per ciascun titolo, l'interpretazione
+  in parole semplici, e il contesto di mercato. Reagisce al portafoglio.
+- **Assistente** — la chat rule-based (`buildChatCard` in `docs/index.html`):
+  domande in linguaggio naturale sul portafoglio/mercato, risposte pescate dai
+  dati già calcolati. Nessun LLM ancora (beta a costo zero); il prossimo passo
+  sarebbe un LLM dietro una Supabase Edge Function riusando il contesto già
+  assemblato qui.
 
-## Regressione OLS lato browser (`docs/ols.js`)
+## Analisi fattoriale accademica Fama-French-Carhart (`docs/ff.js`)
+
+La sezione di punta della tab quant. Scompone il rendimento del portafoglio
+(pesato) nei quattro fattori di rischio accademici — **Mercato (Mkt-RF),
+Dimensione (SMB), Stile value/growth (HML), Momentum (WML)** — con la classica
+regressione di Carhart `(r_port − RF) = α + β·fattori`. I beta sono le
+inclinazioni del portafoglio (es. "beta di mercato 1.7, tilt large-cap growth,
+momentum positivo"); α è l'extra-rendimento non spiegato dai fattori,
+presentato con cautela (su un portafoglio personale è quasi sempre non
+significativo, e lo diciamo).
+
+I fattori vengono da **Ken French's Data Library** (gratis, standard
+accademico): serie "Developed" giornaliere, adatte a un portafoglio globale.
+`engine/fetch.py::fetch_ff_factors` li scarica e `run.py` li pubblica in
+`docs/data/ff_factors.json`; la regressione gira **nel browser** (`ff.js`
+riusa l'OLS di `ols.js`) sul portafoglio dell'utente. Dati di mercato → file
+statico, come tutto il resto.
+
+## Regressione OLS macro per titolo (`docs/ols.js`)
 
 La regressione per-asset della tab Analisi gira **interamente nel browser** —
 niente Python, perché l'utente costruisce il portafoglio dopo il caricamento

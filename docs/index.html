@@ -460,10 +460,12 @@
   <div class="view-tabs" id="view-tabs" style="display:none">
     <button type="button" class="view-tab-btn active" data-view="dashboard">Il tuo portafoglio</button>
     <button type="button" class="view-tab-btn" data-view="analysis">Analisi &amp; Previsione</button>
+    <button type="button" class="view-tab-btn" data-view="chat">Assistente</button>
   </div>
 
   <div id="content"></div>
   <div id="analysis-content" style="display:none"></div>
+  <div id="chat-content" style="display:none"></div>
 
   <p class="disclaimer">Uso personale e informativo. Non è consulenza finanziaria.</p>
 </div>
@@ -472,6 +474,8 @@
 <script src="auth.js"></script>
 <script src="chart.js"></script>
 <script src="ols.js"></script>
+<script src="ff.js"></script>
+<script src="technical.js"></script>
 <script>
 const markSymbol = { supportive: "+", caution: "!", neutral: "·" };
 const markLabel = { supportive: "favorevole", caution: "attenzione", neutral: "neutro" };
@@ -957,8 +961,9 @@ function pillarCard(p) {
 function renderLoginScreen() {
   const content = document.getElementById("content");
   content.innerHTML = "";
-  document.getElementById("analysis-content").innerHTML =
-    `<div class="chart-card"><div class="private-note">Accedi nella tab "Il tuo portafoglio" per costruire il portafoglio e vedere qui l'analisi.</div></div>`;
+  const gatedNote = `<div class="chart-card"><div class="private-note">Accedi nella tab "Il tuo portafoglio" per costruire il portafoglio e vedere qui l'analisi.</div></div>`;
+  document.getElementById("analysis-content").innerHTML = gatedNote;
+  document.getElementById("chat-content").innerHTML = gatedNote;
 
   let mode = "signin"; // or "signup"
   const card = document.createElement("div");
@@ -1022,7 +1027,10 @@ function render(card) {
   content.innerHTML = "";
   // Refresh lives inside the portfolio section ("↻ Aggiorna prezzi").
   content.appendChild(buildPrivateSection());
-  renderAnalysisTab(card);
+  renderAnalysisTab(card);  // computes chatContext used by the chat tab
+  const chatEl = document.getElementById("chat-content");
+  chatEl.innerHTML = "";
+  chatEl.appendChild(buildChatCard());
 }
 
 let appCard = null;  // last-loaded market-data card, so we can re-render on login/logout
@@ -1190,6 +1198,103 @@ function buildInterpretationCard(card, regressionResults) {
   return el;
 }
 
+// Card for the Fama-French-Carhart portfolio decomposition (from ff.js).
+function buildCarhartCard(res) {
+  const el = document.createElement("div");
+  el.className = "chart-card";
+  if (res.error) {
+    el.innerHTML = `<h2>Analisi fattoriale accademica (Fama-French-Carhart)</h2>
+      <div class="private-note">${res.error}</div>`;
+    return el;
+  }
+  const narrative = carhartNarrative(res);
+  const alphaSig = res.alphaPvalue < 0.05;
+  const alphaLine = `Alpha annualizzato ≈ <strong>${res.alphaAnnual >= 0 ? "+" : ""}${res.alphaAnnual.toFixed(1)}%</strong> — l'extra-rendimento non spiegato dai fattori. ${alphaSig ? "Statisticamente significativo, ma raro: valutalo con cautela." : "Non statisticamente significativo (p=" + res.alphaPvalue.toFixed(2) + "): probabilmente è rumore, non vera bravura."}`;
+
+  const rows = res.factors.map(f => {
+    const sig = f.pvalue < 0.05;
+    const badge = sig ? `<span class="reg-badge yes">sì (p&lt;0.05)</span>` : `<span class="reg-badge no">no</span>`;
+    const cls = sig ? (f.beta > 0 ? "sig-pos" : "sig-neg") : "";
+    return `<tr class="${cls}">
+      <td class="factor-name">${FF_LABELS[f.name] || f.name}</td>
+      <td class="num">${f.beta.toFixed(2)}</td>
+      <td class="num">${f.pvalue.toFixed(3)}</td>
+      <td>${badge}</td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <h2>Analisi fattoriale accademica (Fama-French-Carhart)</h2>
+    <div class="private-note" style="font-weight:600;color:var(--ink)">${narrative}</div>
+    <div class="private-note">${alphaLine}</div>
+    <div class="private-note">Scomposizione del rendimento del tuo portafoglio nei fattori di rischio accademici (mercato, dimensione, stile, momentum) — fattori "Developed" giornalieri di Ken French. R²=${res.r2.toFixed(2)}, n=${res.n} giorni.</div>
+    <details class="reg-details">
+      <summary>Mostra i coefficienti (dettaglio tecnico)</summary>
+      <div class="reg-table-wrap">
+        <table class="reg-table">
+          <thead><tr><th>Fattore</th><th>Beta (loading)</th><th>p-value</th><th>Significativo</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="private-note" style="margin-top:10px">
+        Il beta è l'inclinazione del portafoglio verso ciascun fattore: per il mercato ~1 = si muove come il mercato;
+        SMB positivo = small cap; HML positivo = value (negativo = growth); WML positivo = momentum. Verde/rosso =
+        inclinazione statisticamente significativa (p&lt;0.05). Non è una previsione.
+      </div>
+    </details>
+  `;
+  return el;
+}
+
+// Card: technical / statistical indicators per held asset (from
+// technical.js). Plain-language line each + a collapsible number table.
+function buildTechnicalCard(techByAsset) {
+  const entries = techByAsset.filter(t => t.tech);
+  if (!entries.length) return null;
+  const el = document.createElement("div");
+  el.className = "chart-card";
+
+  const bullets = entries.map(e =>
+    `<li><span class="ib-icon">📈</span><span class="ib-text">${technicalNarrative(e.tech, e.name)}</span></li>`
+  ).join("");
+
+  const rows = entries.map(e => {
+    const t = e.tech;
+    return `<tr>
+      <td class="factor-name">${e.name}</td>
+      <td class="num">${t.rsi.toFixed(0)}</td>
+      <td class="num">${t.volAnnual.toFixed(0)}%</td>
+      <td class="num">${t.mom3m != null ? (t.mom3m >= 0 ? "+" : "") + t.mom3m.toFixed(0) + "%" : "—"}</td>
+      <td class="num">${t.mom12m != null ? (t.mom12m >= 0 ? "+" : "") + t.mom12m.toFixed(0) + "%" : "—"}</td>
+      <td class="num">${t.skew.toFixed(2)}</td>
+      <td class="num">${t.kurt.toFixed(2)}</td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <h2>Indicatori tecnici (trend e rischio)</h2>
+    <div class="private-note" style="margin-bottom:4px">Come si sta muovendo ogni titolo, letto dal grafico: forza del trend, volatilità e rischio di movimenti estremi.</div>
+    <ul class="interp-bullets">${bullets}</ul>
+    <details class="reg-details">
+      <summary>Mostra i numeri (dettaglio tecnico)</summary>
+      <div class="reg-table-wrap">
+        <table class="reg-table">
+          <thead><tr>
+            <th>Titolo</th><th>RSI</th><th>Vol. annua</th><th>Mom. 3m</th><th>Mom. 12m</th><th>Skew</th><th>Kurtosi</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="private-note" style="margin-top:10px">
+        RSI &gt;70 = ipercomprato, &lt;30 = ipervenduto. Vol. annua = quanto oscilla (più alta = più rischioso).
+        Momentum = rendimento passato. Skew negativo = più rischio di cali improvvisi; Kurtosi alta = "code pesanti"
+        (movimenti estremi più frequenti del normale). Fotografia del presente, non una previsione.
+      </div>
+    </details>
+  `;
+  return el;
+}
+
 // Parse the static portfolio-level regression out of scorecard.json's
 // factor_regression pillar (fallback when the user hasn't built a
 // browser portfolio).
@@ -1234,6 +1339,10 @@ const CHAT_GLOSSARY = {
   "p value": "Il p-value dice se una relazione è statisticamente affidabile: sotto 0.05 = significativa, sopra = potrebbe essere casuale.",
   "vif": "Il VIF segnala la collinearità: sopra 10, due fattori si somigliano troppo e il loro coefficiente diventa poco affidabile.",
   "coefficiente": "Il coefficiente dice quanto si muove (in media, storicamente) il rendimento dell'asset quando il fattore si muove di un'unità. Positivo = insieme, negativo = in direzione opposta.",
+  "rsi": "L'RSI misura se un titolo è \"corso troppo\": sopra 70 = ipercomprato (possibile pausa), sotto 30 = ipervenduto.",
+  "momentum": "Il momentum è la tendenza dei titoli che sono saliti a continuare a salire (e viceversa). Qui lo misuriamo come rendimento passato a 3 e 12 mesi.",
+  "skew": "Lo skew (asimmetria) dei rendimenti: negativo = più rischio di cali improvvisi che di rialzi improvvisi.",
+  "kurtosi": "La kurtosi misura le \"code pesanti\": alta = movimenti estremi (grandi salti su/giù) più frequenti del normale.",
 };
 
 function escapeHtml(s) {
@@ -1273,6 +1382,14 @@ function chatAnswer(qRaw, ctx) {
   if (has("peggiore", "peggio", "va peggio", "rende di meno") && priced.length) {
     const w = priced.slice().sort((a, c) => a.pnl - c.pnl)[0];
     return `Il titolo che rende di meno è <strong>${w.name}</strong>: ${w.pnl >= 0 ? "+" : ""}${w.pnl.toFixed(0)}%.`;
+  }
+
+  // technical / trend (RSI, momentum, ipercomprato…)
+  if (has("trend", "rsi", "ipercompr", "ipervend", "momentum", "tecnic", "in salita", "in discesa", "surriscald")) {
+    const techs = (ctx && ctx.technicals) || [];
+    const avail = techs.filter(t => t.tech);
+    if (!avail.length) return "Aggiungi un titolo con abbastanza storico per vedere gli indicatori tecnici.";
+    return avail.map(e => "• " + technicalNarrative(e.tech, e.name)).join("\n");
   }
 
   // factor sensitivity
@@ -1340,7 +1457,7 @@ function renderChatThread(threadEl) {
 function buildChatCard() {
   const card = document.createElement("div");
   card.className = "chart-card";
-  const suggestions = ["Come va il mio portafoglio?", "Cosa muove i miei titoli?", "Com'è la volatilità (VIX)?", "Cos'è il MOVE?", "Sono troppo concentrato?"];
+  const suggestions = ["Come va il mio portafoglio?", "Com'è il trend dei miei titoli?", "Cosa muove i miei titoli?", "Com'è la volatilità (VIX)?", "Sono troppo concentrato?"];
   card.innerHTML = `
     <h2>💬 Chiedi alla piattaforma</h2>
     <div class="private-note" style="margin-bottom:0">Fai una domanda sul tuo portafoglio o sui dati — le risposte sono basate sui tuoi numeri. Versione beta (senza AI generativa, ancora).</div>
@@ -1371,6 +1488,7 @@ function buildChatCard() {
 }
 
 let analysisMacroHistory = null;
+let analysisFFFactors = null;
 
 async function renderAnalysisTab(card) {
   latestCard = card;
@@ -1379,6 +1497,9 @@ async function renderAnalysisTab(card) {
 
   if (!analysisMacroHistory) {
     analysisMacroHistory = await fetchJSON("data/macro_history.json");
+  }
+  if (!analysisFFFactors) {
+    analysisFFFactors = await fetchJSON("data/ff_factors.json");
   }
 
   // resolve the user's selected portfolio assets (from the browser) into
@@ -1433,10 +1554,27 @@ async function renderAnalysisTab(card) {
       if (reliable && v.coef < 0) cNeg.add(OLS_FACTOR_LABELS[k] || k);
     }
   }
-  chatContext = { card, holdings: chatHoldings, factorsPos: [...cPos], factorsNeg: [...cNeg], regressionByAsset: regressionResults };
+  // ── technical indicators per held asset ──
+  const techByAsset = picked.map(a => ({ name: a.label, tech: computeTechnicals(a.history) }));
 
-  // ── chat assistant, right under the chart ──
-  el.appendChild(buildChatCard());
+  chatContext = { card, holdings: chatHoldings, factorsPos: [...cPos], factorsNeg: [...cNeg], regressionByAsset: regressionResults, technicals: techByAsset };
+
+  // ── Fama-French-Carhart factor decomposition (portfolio-level), headline ──
+  const pricedForFF = chatHoldings.filter(h => h.priced);
+  const totalMV = pricedForFF.reduce((s, h) => s + h.marketValue, 0);
+  if (pricedForFF.length && totalMV > 0 && analysisFFFactors && analysisFFFactors.length) {
+    const ffHoldings = pricedForFF.map(h => ({
+      weight: h.marketValue / totalMV,
+      history: tickerHistoryCache[h.symbol] || [],
+    }));
+    const portRet = buildPortfolioReturns(ffHoldings);
+    const ffRes = runCarhartRegression(portRet, analysisFFFactors);
+    el.appendChild(buildCarhartCard(ffRes));
+  }
+
+  // ── technical / statistical indicators ──
+  const techCard = buildTechnicalCard(techByAsset);
+  if (techCard) el.appendChild(techCard);
 
   // ── plain-language interpretation, prominent, right after the chart ──
   if (regressionResults.length || card.pillars.some(p => p.key === "macro")) {
@@ -1497,6 +1635,7 @@ async function renderAnalysisTab(card) {
 function switchView(view) {
   document.getElementById("content").style.display = view === "dashboard" ? "block" : "none";
   document.getElementById("analysis-content").style.display = view === "analysis" ? "block" : "none";
+  document.getElementById("chat-content").style.display = view === "chat" ? "block" : "none";
   document.querySelectorAll(".view-tab-btn").forEach(b =>
     b.classList.toggle("active", b.dataset.view === view));
 }

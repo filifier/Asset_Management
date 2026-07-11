@@ -242,6 +242,15 @@ def main():
         json.dump({k: v for k, v in history.items()}, f, separators=(",", ":"))
     print(f"Saved: {macro_history_out}  (public — benchmark price history, safe to git push)")
 
+    # Fama-French-Carhart factors (Developed, daily) for the academic
+    # factor decomposition — market data, published like the rest.
+    print("Fetching Fama-French-Carhart factors (Ken French, Developed daily)…")
+    ff = fetch.fetch_ff_factors()
+    ff_out = os.path.join(HERE, "docs", "data", "ff_factors.json")
+    with open(ff_out, "w") as f:
+        json.dump(ff, f, separators=(",", ":"))
+    print(f"Saved: {ff_out}  ({len(ff)} daily rows: Mkt-RF, SMB, HML, WML, RF)")
+
 
 if __name__ == "__main__":
     main()

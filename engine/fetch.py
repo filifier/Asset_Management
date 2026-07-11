@@ -17,13 +17,25 @@ empty history on failure, never a fabricated value.
 """
 
 import re
+import io
 import json
+import zipfile
 import datetime as dt
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 UA = {"User-Agent": "Mozilla/5.0 (compatible; portfolio-bi/1.0)"}
+
+# Fama-French-Carhart factors, Developed markets, DAILY — from Ken
+# French's Data Library (free, academic gold standard). Developed (not
+# US-only) because a typical portfolio here is global (FTSE All-World,
+# global funds). 3-factor file gives Mkt-RF/SMB/HML/RF; momentum (WML)
+# is a separate file. Values are in PERCENT.
+FF_3F_URL = ("https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
+             "Developed_3_Factors_daily_CSV.zip")
+FF_MOM_URL = ("https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
+              "Developed_MOM_Factor_daily_CSV.zip")
 
 # Fixed start date for all benchmark/macro history (and the window the
 # chart + regression use for the fund too). 2021-01-01 deliberately
@@ -142,6 +154,51 @@ def fetch_yahoo_chart(symbol, start_date=HISTORY_START_DATE, interval="1d"):
     ]
     latest = history[-1][1] if history else None
     return latest, history
+
+
+def _get_bytes(url, timeout=30):
+    with urlopen(Request(url, headers=UA), timeout=timeout) as r:
+        return r.read()
+
+
+def _parse_ff_zip(raw, ncols):
+    """Parse a Ken French CSV-in-zip: skip the metadata header lines, keep
+    rows whose first field is an 8-digit date. Returns {iso_date: [vals]}."""
+    z = zipfile.ZipFile(io.BytesIO(raw))
+    text = z.read(z.namelist()[0]).decode("latin-1")
+    rows = {}
+    for line in text.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) >= ncols + 1 and re.fullmatch(r"\d{8}", parts[0]):
+            try:
+                vals = [float(x) for x in parts[1:ncols + 1]]
+            except ValueError:
+                continue
+            d = f"{parts[0][:4]}-{parts[0][4:6]}-{parts[0][6:8]}"
+            rows[d] = vals
+    return rows
+
+
+def fetch_ff_factors(start_date=HISTORY_START_DATE):
+    """Fama-French-Carhart daily factors (Developed markets), from
+    start_date onward. Returns a list of (iso_date, mkt_rf, smb, hml,
+    wml, rf) tuples — all in PERCENT — or [] on failure (never
+    fabricated). Note: Ken French updates monthly with a lag, so the
+    series typically ends a few weeks before today; that's expected and
+    fine for a historical factor regression."""
+    try:
+        f3 = _parse_ff_zip(_get_bytes(FF_3F_URL), 4)    # Mkt-RF, SMB, HML, RF
+        mom = _parse_ff_zip(_get_bytes(FF_MOM_URL), 1)  # WML (momentum)
+    except (URLError, HTTPError, TimeoutError, zipfile.BadZipFile, OSError) as e:
+        print(f"  ! Fama-French factors fetch failed: {e}")
+        return []
+    out = []
+    for d in sorted(f3):
+        if d < start_date or d not in mom:
+            continue
+        mkt_rf, smb, hml, rf = f3[d]
+        out.append((d, mkt_rf, smb, hml, mom[d][0], rf))
+    return out
 
 
 def fetch_all():
