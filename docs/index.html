@@ -381,6 +381,35 @@
   .reg-details summary::before { content: "▸  "; }
   .reg-details[open] summary::before { content: "▾  "; }
 
+  /* ── chat assistant (rule-based, beta) ── */
+  .chat-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 10px; }
+  .chat-chip {
+    font-size: 12px; color: var(--support); background: var(--support-bg);
+    border: 1px solid var(--support); border-radius: 999px; padding: 5px 11px; cursor: pointer;
+  }
+  .chat-chip:hover { background: #dcecdf; }
+  .chat-thread {
+    display: flex; flex-direction: column; gap: 8px; margin: 4px 0 12px;
+    max-height: 320px; overflow-y: auto;
+  }
+  .chat-thread:empty { display: none; }
+  .chat-msg {
+    max-width: 88%; padding: 9px 13px; border-radius: 13px; font-size: 13.5px;
+    line-height: 1.45; white-space: pre-wrap; word-wrap: break-word;
+  }
+  .chat-msg.user { align-self: flex-end; background: var(--support); color: #fff; border-bottom-right-radius: 4px; }
+  .chat-msg.bot { align-self: flex-start; background: var(--neutral-bg); color: var(--ink); border-bottom-left-radius: 4px; }
+  .chat-input-row { display: flex; gap: 8px; }
+  .chat-input-row input {
+    flex: 1; font-size: 14px; padding: 10px 12px; border: 1.5px solid var(--border);
+    border-radius: 10px; background: var(--bg); color: var(--ink); box-sizing: border-box;
+  }
+  .chat-input-row input:focus { outline: none; border-color: var(--support); box-shadow: 0 0 0 3px rgba(47,122,79,0.15); }
+  .chat-input-row button {
+    font-size: 14px; font-weight: 700; color: #fff; background: var(--support);
+    border: none; border-radius: 10px; padding: 10px 18px; cursor: pointer;
+  }
+
   /* ── login / account ── */
   .auth-card {
     background: var(--card); border: 1px solid var(--border);
@@ -1178,6 +1207,169 @@ function staticRegressionFromCard(card) {
   return { factors, fitLine: fit ? fit.reading : "" };
 }
 
+// ── Rule-based chat assistant (beta, no LLM) ──────────────────────────
+// Answers questions about the user's portfolio and the market by pulling
+// from data we ALREADY compute in the browser (holdings performance,
+// per-asset regressions, macro readings). Plain-language, grounded in the
+// numbers, deliberately "describes, does not advise". A future version can
+// swap this for a real LLM behind a Supabase Edge Function.
+let chatMessages = [];   // {role: "user"|"bot", text} — persists across tab re-renders
+let chatContext = null;  // refreshed by renderAnalysisTab
+
+const CHAT_GLOSSARY = {
+  "vix": "Il VIX è l'\"indice della paura\": misura quanta volatilità il mercato si aspetta sull'azionario USA. Basso = clima calmo; alto = tensione.",
+  "move": "Il MOVE è come il VIX ma per il mercato obbligazionario: misura la volatilità attesa sui titoli di Stato USA. Sale quando c'è incertezza sui tassi.",
+  "dxy": "Il DXY misura la forza del dollaro USA contro un paniere di valute. Sale quando il dollaro si rafforza.",
+  "us 10y": "È il rendimento del Treasury USA a 10 anni, il tasso \"senza rischio\" di riferimento. Quando sale, pesa sui titoli growth/tech.",
+  "10y": "È il rendimento del Treasury USA a 10 anni, il tasso \"senza rischio\" di riferimento. Quando sale, pesa sui titoli growth/tech.",
+  "term spread": "È la differenza tra il rendimento a 10 anni e quello a 2 anni: descrive la pendenza della curva dei tassi.",
+  "gold": "L'oro è un bene rifugio: tende a salire quando c'è avversione al rischio o timori sull'inflazione.",
+  "oro": "L'oro è un bene rifugio: tende a salire quando c'è avversione al rischio o timori sull'inflazione.",
+  "nasdaq": "Il NASDAQ 100 raggruppa i grandi titoli tecnologici/growth USA. Molto correlato all'S&P 500.",
+  "s&p": "L'S&P 500 è l'indice delle 500 maggiori aziende USA — il termometro del mercato azionario americano.",
+  "hy credit": "Sono le obbligazioni societarie ad alto rendimento (High Yield): salgono quando il mercato ha appetito per il rischio di credito.",
+  "r²": "R² misura quanto il modello spiega i movimenti dell'asset: 1.0 = perfetto, valori bassi = i prezzi non seguono bene i fattori (normale in finanza).",
+  "r2": "R² misura quanto il modello spiega i movimenti dell'asset: 1.0 = perfetto, valori bassi = i prezzi non seguono bene i fattori (normale in finanza).",
+  "p-value": "Il p-value dice se una relazione è statisticamente affidabile: sotto 0.05 = significativa, sopra = potrebbe essere casuale.",
+  "p value": "Il p-value dice se una relazione è statisticamente affidabile: sotto 0.05 = significativa, sopra = potrebbe essere casuale.",
+  "vif": "Il VIF segnala la collinearità: sopra 10, due fattori si somigliano troppo e il loro coefficiente diventa poco affidabile.",
+  "coefficiente": "Il coefficiente dice quanto si muove (in media, storicamente) il rendimento dell'asset quando il fattore si muove di un'unità. Positivo = insieme, negativo = in direzione opposta.",
+};
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function chatAnswer(qRaw, ctx) {
+  const q = qRaw.toLowerCase();
+  const has = (...ws) => ws.some(w => q.includes(w));
+  const holdings = (ctx && ctx.holdings) || [];
+  const priced = holdings.filter(h => h.priced);
+
+  // help
+  if (has("aiuto", "help", "cosa posso", "che domande", "come funzioni", "cosa sai"))
+    return "Puoi chiedermi, ad esempio:\n• Come va il mio portafoglio?\n• Qual è il titolo migliore / peggiore?\n• Cosa muove i miei titoli?\n• Com'è la volatilità (VIX)? E i tassi?\n• Sono troppo concentrato?\n• Cos'è il MOVE / DXY / R² / VIF?";
+
+  // glossary / definitions
+  if (has("cos'è", "cosa è", "cos e", "che cos", "significa", "spiega", "vuol dire")) {
+    for (const [k, v] of Object.entries(CHAT_GLOSSARY)) if (q.includes(k)) return v;
+  }
+
+  // portfolio performance
+  if (has("come va", "come sta", "performance", "andamento", "guadagn", "perdit", "sta andando", "quanto rendo", "quanto ho fatto")) {
+    if (!priced.length) return "Non hai ancora posizioni con un prezzo valido. Aggiungi un titolo nella tab \"Il tuo portafoglio\".";
+    const inv = priced.reduce((s, h) => s + h.invested, 0);
+    const val = priced.reduce((s, h) => s + h.marketValue, 0);
+    const pnl = (val - inv) / inv * 100;
+    const lines = priced.map(h => `• ${h.name}: ${h.pnl >= 0 ? "+" : ""}${h.pnl.toFixed(0)}%`).join("\n");
+    return `Il tuo portafoglio è a <strong>${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}%</strong> (${Math.round(inv).toLocaleString("it-IT")}€ → ${Math.round(val).toLocaleString("it-IT")}€ oggi).\nPer titolo:\n${lines}`;
+  }
+
+  // best / worst
+  if (has("migliore", "meglio", "top", "che rende di più", "va meglio") && priced.length) {
+    const b = priced.slice().sort((a, c) => c.pnl - a.pnl)[0];
+    return `Il titolo che rende di più è <strong>${b.name}</strong>: ${b.pnl >= 0 ? "+" : ""}${b.pnl.toFixed(0)}%.`;
+  }
+  if (has("peggiore", "peggio", "va peggio", "rende di meno") && priced.length) {
+    const w = priced.slice().sort((a, c) => a.pnl - c.pnl)[0];
+    return `Il titolo che rende di meno è <strong>${w.name}</strong>: ${w.pnl >= 0 ? "+" : ""}${w.pnl.toFixed(0)}%.`;
+  }
+
+  // factor sensitivity
+  if (has("cosa muove", "muove", "sensibil", "fattori", "dipende", "correla", "reagisce", "influenza")) {
+    const pos = (ctx && ctx.factorsPos) || [], neg = (ctx && ctx.factorsNeg) || [];
+    if (!pos.length && !neg.length) return "Sui dati storici il tuo portafoglio non ha una relazione statisticamente affidabile con i fattori macro tracciati: si muove soprattutto per ragioni proprie.";
+    let r = "Storicamente il tuo portafoglio ";
+    if (pos.length) r += `si muove insieme a <strong>${pos.join(", ")}</strong>`;
+    if (pos.length && neg.length) r += "; ";
+    if (neg.length) r += `soffre quando salgono <strong>${neg.join(", ")}</strong>`;
+    return r + ". (relazione storica, non una previsione)";
+  }
+
+  // volatility / VIX
+  if (has("vix", "volatil", "paura", "clima")) {
+    const lvl = parseFloat(findSignalReading(ctx && ctx.card, "macro", "VIX") || "");
+    const tr = findSignalReading(ctx && ctx.card, "outlook", "VIX") || "";
+    if (isNaN(lvl)) return CHAT_GLOSSARY.vix;
+    const mood = lvl <= 16 ? "basso, clima calmo e propenso al rischio" : lvl <= 24 ? "nella media" : "alto, clima teso";
+    const dir = /rising/.test(tr) ? ", ed è salito nell'ultimo mese" : /falling/.test(tr) ? ", ed è sceso nell'ultimo mese" : "";
+    return `Il VIX è a <strong>${lvl.toFixed(1)}</strong>: ${mood}${dir}.\n${CHAT_GLOSSARY.vix}`;
+  }
+
+  // rates
+  if (has("tassi", "treasury", "10 anni", "rendimento del", "10y")) {
+    const y = parseFloat((findSignalReading(ctx && ctx.card, "macro", "US 10Y") || "").replace("%", ""));
+    const tr = findSignalReading(ctx && ctx.card, "outlook", "US 10Y") || "";
+    if (isNaN(y)) return CHAT_GLOSSARY["us 10y"];
+    const dir = /rising/.test(tr) ? "in salita" : /falling/.test(tr) ? "in calo" : "stabile";
+    return `Il rendimento USA a 10 anni è al <strong>${y.toFixed(1)}%</strong> ed è ${dir}.\n${CHAT_GLOSSARY["us 10y"]}`;
+  }
+
+  // concentration
+  if (has("concentr", "diversific", "troppo su", "peso")) {
+    const pv = parseFloat(portfolioState.portfolioValue);
+    if (!priced.length) return "Aggiungi almeno una posizione per valutare la concentrazione.";
+    if (!(pv > 0)) return "Per la concentrazione, inserisci il \"Valore totale del portafoglio\" nella tab \"Il tuo portafoglio\".";
+    const lines = priced.map(h => `• ${h.name}: ${(h.marketValue / pv * 100).toFixed(0)}%`).join("\n");
+    const maxc = Math.max(...priced.map(h => h.marketValue / pv * 100));
+    const verdict = maxc >= 30 ? "Una posizione supera il 30% del portafoglio: c'è rischio di concentrazione."
+      : maxc <= 10 ? "Nessuna posizione domina: buona diversificazione (o posizioni ancora piccole)."
+      : "Le posizioni hanno un peso moderato.";
+    return `Peso di ogni posizione sul portafoglio dichiarato:\n${lines}\n${verdict}`;
+  }
+
+  // holding-specific
+  if (priced.length) {
+    const hit = priced.find(h => q.includes(h.name.toLowerCase().split(" ")[0]) || q.includes(h.symbol.toLowerCase()));
+    if (hit) {
+      let r = `${hit.name}: <strong>${hit.pnl >= 0 ? "+" : ""}${hit.pnl.toFixed(0)}%</strong> dalla data d'acquisto.`;
+      const reg = (ctx.regressionByAsset || []).find(x => x.label === hit.name);
+      if (reg && reg.result && !reg.result.error) r += "\n" + regressionNarrative(reg.result, hit.name);
+      return r;
+    }
+  }
+
+  return "Non sono sicuro di aver capito 🤔. Prova con: \"come va il mio portafoglio?\", \"cosa muove i miei titoli?\", \"com'è il VIX?\", \"cos'è il MOVE?\", oppure scrivi \"aiuto\".";
+}
+
+function renderChatThread(threadEl) {
+  threadEl.innerHTML = chatMessages.map(m => `<div class="chat-msg ${m.role}">${m.text}</div>`).join("");
+  threadEl.scrollTop = threadEl.scrollHeight;
+}
+
+function buildChatCard() {
+  const card = document.createElement("div");
+  card.className = "chart-card";
+  const suggestions = ["Come va il mio portafoglio?", "Cosa muove i miei titoli?", "Com'è la volatilità (VIX)?", "Cos'è il MOVE?", "Sono troppo concentrato?"];
+  card.innerHTML = `
+    <h2>💬 Chiedi alla piattaforma</h2>
+    <div class="private-note" style="margin-bottom:0">Fai una domanda sul tuo portafoglio o sui dati — le risposte sono basate sui tuoi numeri. Versione beta (senza AI generativa, ancora).</div>
+    <div class="chat-suggestions">${suggestions.map(s => `<button type="button" class="chat-chip">${s}</button>`).join("")}</div>
+    <div class="chat-thread" id="chat-thread"></div>
+    <div class="chat-input-row">
+      <input id="chat-input" type="text" autocomplete="off" placeholder="Scrivi una domanda…">
+      <button type="button" id="chat-send">Invia</button>
+    </div>
+  `;
+  const thread = card.querySelector("#chat-thread");
+  const input = card.querySelector("#chat-input");
+  renderChatThread(thread);
+
+  function send(text) {
+    text = (text || "").trim();
+    if (!text) return;
+    chatMessages.push({ role: "user", text: escapeHtml(text) });
+    chatMessages.push({ role: "bot", text: chatAnswer(text, chatContext) });
+    renderChatThread(thread);
+    input.value = "";
+    input.focus();
+  }
+  card.querySelector("#chat-send").addEventListener("click", () => send(input.value));
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") send(input.value); });
+  card.querySelectorAll(".chat-chip").forEach(c => c.addEventListener("click", () => send(c.textContent)));
+  return card;
+}
+
 let analysisMacroHistory = null;
 
 async function renderAnalysisTab(card) {
@@ -1219,6 +1411,32 @@ async function renderAnalysisTab(card) {
       regressionResults.push({ label: asset.label, result: runAssetRegression(asset.history, analysisMacroHistory) });
     }
   }
+
+  // ── refresh the chat context from the same computed data ──
+  const chatHoldings = portfolioState.holdings.map(h => {
+    const hist = tickerHistoryCache[h.symbol] || [];
+    const pp = navOnOrBefore(hist, h.purchaseDate);
+    const cp = hist.length ? hist[hist.length - 1][1] : null;
+    const isPriced = pp > 0 && cp > 0;
+    return {
+      name: h.name, symbol: h.symbol, invested: h.investedAmount, priced: isPriced,
+      pnl: isPriced ? (cp / pp - 1) * 100 : null,
+      marketValue: isPriced ? h.investedAmount * cp / pp : null,
+    };
+  });
+  const cPos = new Set(), cNeg = new Set();
+  for (const r of regressionResults) {
+    if (!r.result || r.result.error) continue;
+    for (const [k, v] of Object.entries(r.result.factors)) {
+      const reliable = v.pvalue < 0.05 && (v.vif == null || v.vif < 10);
+      if (reliable && v.coef > 0) cPos.add(OLS_FACTOR_LABELS[k] || k);
+      if (reliable && v.coef < 0) cNeg.add(OLS_FACTOR_LABELS[k] || k);
+    }
+  }
+  chatContext = { card, holdings: chatHoldings, factorsPos: [...cPos], factorsNeg: [...cNeg], regressionByAsset: regressionResults };
+
+  // ── chat assistant, right under the chart ──
+  el.appendChild(buildChatCard());
 
   // ── plain-language interpretation, prominent, right after the chart ──
   if (regressionResults.length || card.pillars.some(p => p.key === "macro")) {
