@@ -102,10 +102,19 @@ async function cloudSavePortfolio(portfolio) {
 
 // ── cloud investor-profile storage (one JSONB row per user, same shape
 // as portfolios — see README "Login e cloud" for the RLS setup) ──
+//
+// Both functions report *reachability* separately from emptiness, so the
+// caller can tell "table missing / offline" (fall back to localStorage,
+// never block login) apart from "table there but no profile yet" (show
+// onboarding). This keeps login working even before the `profiles` table
+// is created in Supabase.
+//
+// cloudLoadProfile → { ok: true, answers }  (answers may be null = no row)
+//                    { ok: false }          (unreachable: table missing / error)
 async function cloudLoadProfile() {
   const c = sbClient();
   const user = await authGetUser();
-  if (!c || !user) return null;
+  if (!c || !user) return { ok: false };
   const { data, error } = await c
     .from("profiles")
     .select("answers")
@@ -113,19 +122,21 @@ async function cloudLoadProfile() {
     .maybeSingle();
   if (error) {
     console.warn("cloudLoadProfile:", error.message);
-    return null;
+    return { ok: false };
   }
-  return data ? data.answers : null;
+  return { ok: true, answers: data ? data.answers : null };
 }
 
+// Returns true only if the write actually reached the cloud.
 async function cloudSaveProfile(answers) {
   const c = sbClient();
   const user = await authGetUser();
-  if (!c || !user) return;
+  if (!c || !user) return false;
   const { error } = await c.from("profiles").upsert({
     user_id: user.id,
     answers,
     updated_at: new Date().toISOString(),
   });
-  if (error) console.warn("cloudSaveProfile:", error.message);
+  if (error) { console.warn("cloudSaveProfile:", error.message); return false; }
+  return true;
 }

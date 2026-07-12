@@ -327,6 +327,14 @@ Moderato / Dinamico**), salvata nel cloud (tabella `profiles`, stessa logica
 RLS di `portfolios`) e modificabile in qualsiasi momento dal bottone
 "⚙ Profilo" nella tab "Il tuo portafoglio".
 
+**Robustezza:** se la tabella `profiles` non è ancora stata creata su
+Supabase (o è irraggiungibile), il login **non si blocca**: il profilo viene
+salvato in un cache `localStorage` per-utente (`investorProfile:<user_id>`) e
+il questionario non ricompare a ogni accesso. Senza la tabella si perde però
+la sincronizzazione tra dispositivi — creala (SQL sotto) per averla. Questo
+evita il bug per cui, mancando la tabella, l'onboarding si ripresentava e il
+salvataggio falliva in silenzio.
+
 Il profilo **non cambia i calcoli** (OLS, Fama-French e indicatori tecnici
 restano oggettivi) — cambia solo **cosa viene mostrato**: la Sezione 4 della
 tab "Analisi & Previsione", **"News rilevanti"**, incrocia i temi macro più

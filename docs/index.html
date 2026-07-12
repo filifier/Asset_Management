@@ -692,7 +692,21 @@ async function getTickerHistory(symbol) {
 let portfolioState = { portfolioValue: "", holdings: [] };
 let currentUser = null;
 let userProfile = null;  // {score, label, desc, answers} — computeRiskProfile() result, or null until answered
+let _profileScreenActive = false;  // guards the profile form against being wiped by background auth re-renders
 let _saveTimer = null;
+
+// Per-user localStorage cache for the investor profile — a fallback for
+// when the Supabase `profiles` table is unreachable (e.g. not created
+// yet), so login is never trapped in the onboarding loop. Namespaced by
+// user id to avoid leaking one account's profile to another on a shared
+// browser.
+function _profileKey(userId) { return "investorProfile:" + userId; }
+function loadLocalProfile(userId) {
+  try { return JSON.parse(localStorage.getItem(_profileKey(userId)) || "null"); } catch (e) { return null; }
+}
+function saveLocalProfile(userId, answers) {
+  try { localStorage.setItem(_profileKey(userId), JSON.stringify(answers)); } catch (e) { /* quota / private mode */ }
+}
 
 function persistPortfolio() {
   const payload = { portfolioValue: portfolioState.portfolioValue, holdings: portfolioState.holdings };
@@ -876,7 +890,8 @@ function buildPrivateSection() {
 
   const editProfileBtn = el.querySelector("#pf-edit-profile");
   if (editProfileBtn) editProfileBtn.addEventListener("click", () => {
-    renderProfileScreen("edit", () => render(appCard));  // re-render either way (save or cancel)
+    _profileScreenActive = true;  // protect the edit form from background auth re-renders too
+    renderProfileScreen("edit", () => { _profileScreenActive = false; render(appCard); });  // re-render either way (save or cancel)
   });
 
   const valueInput = el.querySelector("#pf-value");
@@ -1232,44 +1247,57 @@ function renderProfileScreen(mode, onDone) {
   const card = document.createElement("div");
   card.className = "profile-card";
 
-  function paint() {
-    const allAnswered = PROFILE_QUESTIONS.every(q => answers[q.id]);
-    card.innerHTML = `
-      <h2>Il tuo profilo da investitore</h2>
-      <div class="auth-sub">${mode === "onboarding"
-        ? "5 domande rapide, come un questionario di adeguatezza: ci servono per mostrarti le notizie più pertinenti al tuo profilo. Non generano consigli di investimento — solo contesto su misura."
-        : "Puoi aggiornare le tue risposte in qualsiasi momento."}</div>
-      ${PROFILE_QUESTIONS.map((q, i) => `
-        <div class="profile-q" data-qid="${q.id}">
-          <div><span class="pq-num">${i + 1}</span><span class="pq-text">${q.text}</span></div>
-          <div class="pq-hint">${q.hint}</div>
-          ${q.options.map(o => `
-            <label class="profile-opt ${answers[q.id] === o.key ? "checked" : ""}">
-              <input type="radio" name="${q.id}" value="${o.key}" ${answers[q.id] === o.key ? "checked" : ""}>
-              <span><strong>${o.key})</strong> ${o.text}</span>
-            </label>
-          `).join("")}
-        </div>
-      `).join("")}
-      <button id="profile-submit" ${allAnswered ? "" : "disabled"}>Salva profilo</button>
-      ${mode === "edit" ? `<button type="button" class="profile-cancel" id="profile-cancel">Annulla</button>` : ""}
-    `;
+  // Built ONCE. Radio changes only toggle classes + the submit state —
+  // we deliberately do NOT rebuild innerHTML on each answer, because
+  // recreating the radios mid-change-event corrupts the selection (a
+  // click on one question would clear another). See the change handler.
+  card.innerHTML = `
+    <h2>Il tuo profilo da investitore</h2>
+    <div class="auth-sub">${mode === "onboarding"
+      ? "5 domande rapide, come un questionario di adeguatezza: ci servono per mostrarti le notizie più pertinenti al tuo profilo. Non generano consigli di investimento — solo contesto su misura."
+      : "Puoi aggiornare le tue risposte in qualsiasi momento."}</div>
+    ${PROFILE_QUESTIONS.map((q, i) => `
+      <div class="profile-q" data-qid="${q.id}">
+        <div><span class="pq-num">${i + 1}</span><span class="pq-text">${q.text}</span></div>
+        <div class="pq-hint">${q.hint}</div>
+        ${q.options.map(o => `
+          <label class="profile-opt ${answers[q.id] === o.key ? "checked" : ""}">
+            <input type="radio" name="${q.id}" value="${o.key}" ${answers[q.id] === o.key ? "checked" : ""}>
+            <span><strong>${o.key})</strong> ${o.text}</span>
+          </label>
+        `).join("")}
+      </div>
+    `).join("")}
+    <button id="profile-submit" ${PROFILE_QUESTIONS.every(q => answers[q.id]) ? "" : "disabled"}>Salva profilo</button>
+    ${mode === "edit" ? `<button type="button" class="profile-cancel" id="profile-cancel">Annulla</button>` : ""}
+  `;
 
-    card.querySelectorAll('input[type="radio"]').forEach(r => {
-      r.addEventListener("change", () => { answers[r.name] = r.value; paint(); });
-    });
-    const cancelBtn = card.querySelector("#profile-cancel");
-    if (cancelBtn) cancelBtn.addEventListener("click", () => onDone(false));
+  const submitBtn = card.querySelector("#profile-submit");
 
-    card.querySelector("#profile-submit").addEventListener("click", async () => {
-      const btn = card.querySelector("#profile-submit");
-      btn.disabled = true; btn.textContent = "Salvo…";
-      await cloudSaveProfile(answers);
-      userProfile = computeRiskProfile(answers);
-      onDone(true);
+  card.querySelectorAll('input[type="radio"]').forEach(r => {
+    r.addEventListener("change", () => {
+      answers[r.name] = r.value;
+      // repaint ONLY this question's option highlight, in place
+      card.querySelectorAll(`.profile-q[data-qid="${r.name}"] .profile-opt`).forEach(lab => {
+        lab.classList.toggle("checked", lab.querySelector("input").value === r.value);
+      });
+      submitBtn.disabled = !PROFILE_QUESTIONS.every(q => answers[q.id]);
     });
-  }
-  paint();
+  });
+
+  const cancelBtn = card.querySelector("#profile-cancel");
+  if (cancelBtn) cancelBtn.addEventListener("click", () => onDone(false));
+
+  submitBtn.addEventListener("click", async () => {
+    submitBtn.disabled = true; submitBtn.textContent = "Salvo…";
+    // Try the cloud; always keep a local cache so the profile survives
+    // even if the profiles table isn't created yet (login won't loop).
+    await cloudSaveProfile(answers);
+    if (currentUser) saveLocalProfile(currentUser.id, answers);
+    userProfile = computeRiskProfile(answers);
+    onDone(true);
+  });
+
   content.appendChild(card);
 }
 
@@ -1296,13 +1324,26 @@ let appCard = null;  // last-loaded market-data card, so we can re-render on log
 async function renderGated() {
   if (!appCard) return;
   if (authConfigured() && !currentUser) {
+    _profileScreenActive = false;
     renderLoginScreen();
     return;
   }
+  // A profile form (onboarding or edit) is already open. Supabase re-fires
+  // auth events in the background (token refresh, tab visibility), each of
+  // which calls renderGated — without this guard those spurious re-fires
+  // would rebuild the form and wipe the answers the user is entering,
+  // making it impossible to finish. Sign-out is handled above, before here.
+  if (_profileScreenActive) return;
+
   if (authConfigured() && currentUser && userProfile === null) {
-    const answers = await cloudLoadProfile();
+    // Cloud is the source of truth when reachable; if the profiles table
+    // is missing / offline, fall back to a per-user localStorage cache so
+    // login is NEVER blocked by a missing table (see auth.js).
+    const res = await cloudLoadProfile();
+    const answers = res.ok ? res.answers : loadLocalProfile(currentUser.id);
     if (!answers) {
-      renderProfileScreen("onboarding", () => renderGated());  // re-run now that userProfile is set
+      _profileScreenActive = true;
+      renderProfileScreen("onboarding", () => { _profileScreenActive = false; renderGated(); });
       return;
     }
     userProfile = computeRiskProfile(answers);
