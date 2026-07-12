@@ -99,3 +99,33 @@ async function cloudSavePortfolio(portfolio) {
   });
   if (error) console.warn("cloudSavePortfolio:", error.message);
 }
+
+// ── cloud investor-profile storage (one JSONB row per user, same shape
+// as portfolios — see README "Login e cloud" for the RLS setup) ──
+async function cloudLoadProfile() {
+  const c = sbClient();
+  const user = await authGetUser();
+  if (!c || !user) return null;
+  const { data, error } = await c
+    .from("profiles")
+    .select("answers")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (error) {
+    console.warn("cloudLoadProfile:", error.message);
+    return null;
+  }
+  return data ? data.answers : null;
+}
+
+async function cloudSaveProfile(answers) {
+  const c = sbClient();
+  const user = await authGetUser();
+  if (!c || !user) return;
+  const { error } = await c.from("profiles").upsert({
+    user_id: user.id,
+    answers,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) console.warn("cloudSaveProfile:", error.message);
+}

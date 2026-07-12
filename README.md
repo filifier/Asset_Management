@@ -156,17 +156,42 @@ senso. Vedi `RATE_LIKE_FACTORS` in `engine/regression.py`.
 
 La dashboard pubblica è divisa in tre viste:
 
-- **Il tuo portafoglio** — la parte personale (login-gated): componi il
-  portafoglio, vedi performance e concentrazione.
-- **Analisi & Previsione** — la parte **quant pura**, guidata dal portafoglio:
-  il grafico "Andamento", l'**analisi fattoriale accademica Fama-French-Carhart**
-  (vedi sotto), una regressione OLS macro per ciascun titolo, l'interpretazione
-  in parole semplici, e il contesto di mercato. Reagisce al portafoglio.
+- **Il tuo portafoglio** — la parte personale (login-gated, con **profilazione
+  al primo accesso**, vedi sotto): componi il portafoglio, vedi performance e
+  concentrazione, e la card **"Top 3 notizie per te"** (vedi sotto).
+- **Analisi & Previsione** — la parte **quant pura**, guidata dal portafoglio,
+  in 4 sezioni numerate: **1. Regressione OLS** macro per titolo, **2.
+  Fama-French-Carhart** (vedi sotto), **3. Indicatori tecnici**, **4. News
+  rilevanti** (settore del portafoglio + profilo investitore, vedi sotto).
+  Sopra le sezioni: il grafico "Andamento" e l'interpretazione in parole
+  semplici. Reagisce al portafoglio.
 - **Assistente** — la chat rule-based (`buildChatCard` in `docs/index.html`):
   domande in linguaggio naturale sul portafoglio/mercato, risposte pescate dai
   dati già calcolati. Nessun LLM ancora (beta a costo zero); il prossimo passo
   sarebbe un LLM dietro una Supabase Edge Function riusando il contesto già
   assemblato qui.
+
+## Notizie: "Top 3 per te" (`engine/news.py` + `docs/data/news.json`)
+
+Il primo mattone del "cervello finanziario": una rassegna stampa personalizzata
+sul portafoglio dell'utente. Sei fonti — **Yahoo Finance, Investing.com,
+MarketWatch, CNBC, Seeking Alpha, Reuters** (quest'ultima via Google News RSS,
+avendo Reuters dismesso i propri feed) — lette **solo via RSS ufficiale**:
+niente scraping dell'HTML, e ripubblichiamo solo titolo + fonte + link
+(stile aggregatore, come Google News), il che ci tiene lontani da problemi
+di ToS e copyright.
+
+`run.py` scarica i feed, li deduplica e **tagga ogni titolo** con i ticker
+dell'universo (matching sul nome societario e sul simbolo) e con ~12 temi
+macro (tassi, inflazione, petrolio, AI & chip, …). Il ranking per-utente
+avviene **nel browser** (il portafoglio vive lì): menzioni dei propri titoli
+pesano di più, poi temi macro, poi freschezza. La card "📰 Top 3 notizie per
+te" sta nella tab Portafoglio e si ri-ordina quando cambi le posizioni; la
+chat risponde a "che notizie ci sono?" con le stesse 3, linkate.
+
+Limite onesto: le notizie sono fresche quanto l'ultima esecuzione di
+`run.py` + push. Il passo successivo naturale è una **GitHub Action**
+schedulata (gratis sui repo pubblici) che rigeneri `news.json` ogni poche ore.
 
 ## Analisi fattoriale accademica Fama-French-Carhart (`docs/ff.js`)
 
@@ -289,6 +314,42 @@ Nota privacy: rispetto alle versioni precedenti (portafoglio solo in
 `localStorage`), ora il portafoglio **viene salvato nel cloud** legato
 all'account. Resta privato (solo l'utente vi accede, protetto da password +
 RLS), ma non è più "mai fuori dal dispositivo".
+
+## Profilo investitore e "News rilevanti" (`docs/profile.js`)
+
+Al primo login, prima di vedere il portafoglio, l'utente risponde a un
+**questionario di profilazione in 5 domande** (istruzione/professione,
+esperienza con strumenti finanziari, patrimonio ed esposizione, orizzonte
+temporale, tolleranza a una perdita del 15%) — gli stessi assi di un
+questionario di adeguatezza MiFID, semplificati per uso personale. Le
+risposte producono un punteggio 5–15 e un'etichetta (**Conservativo /
+Moderato / Dinamico**), salvata nel cloud (tabella `profiles`, stessa logica
+RLS di `portfolios`) e modificabile in qualsiasi momento dal bottone
+"⚙ Profilo" nella tab "Il tuo portafoglio".
+
+Il profilo **non cambia i calcoli** (OLS, Fama-French e indicatori tecnici
+restano oggettivi) — cambia solo **cosa viene mostrato**: la Sezione 4 della
+tab "Analisi & Previsione", **"News rilevanti"**, incrocia i temi macro più
+frequenti nelle notizie sui titoli posseduti (il "settore" implicito del
+portafoglio, dedotto dai dati invece che auto-dichiarato) con i temi che il
+profilo di rischio privilegia (es. Conservativo → tassi/inflazione/volatilità;
+Dinamico → AI/cripto/azionario). Resta "descrive, non prescrive": nessun
+suggerimento di acquisto/vendita nasce da questo profilo.
+
+Setup Supabase per la tabella `profiles` (SQL Editor, stesso pattern di
+`portfolios`):
+
+```sql
+create table if not exists profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  answers jsonb not null,
+  updated_at timestamptz default now()
+);
+alter table profiles enable row level security;
+create policy "select own profile" on profiles for select using (auth.uid() = user_id);
+create policy "insert own profile" on profiles for insert with check (auth.uid() = user_id);
+create policy "update own profile" on profiles for update using (auth.uid() = user_id);
+```
 
 ## Ricerca titoli — perché una lista pre-scaricata, non live
 

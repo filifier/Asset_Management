@@ -20,7 +20,7 @@ import datetime as dt
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from engine import fetch, scoring, regression
+from engine import fetch, scoring, regression, news
 
 TRADING_DAYS_1Y = 252
 
@@ -250,6 +250,16 @@ def main():
     with open(ff_out, "w") as f:
         json.dump(ff, f, separators=(",", ":"))
     print(f"Saved: {ff_out}  ({len(ff)} daily rows: Mkt-RF, SMB, HML, WML, RF)")
+
+    # Financial news (headlines + links only, via official RSS feeds) —
+    # tagged against the ticker universe so the front-end can pick the
+    # 3 most relevant to each user's own portfolio.
+    print("Fetching financial news (RSS: Yahoo, Investing, MarketWatch, CNBC, Seeking Alpha, Reuters)…")
+    news_data = news.fetch_news(os.path.join(HERE, "docs", "data", "ticker_list.json"))
+    news_out = os.path.join(HERE, "docs", "data", "news.json")
+    with open(news_out, "w") as f:
+        json.dump(news_data, f, separators=(",", ":"), ensure_ascii=False)
+    print(f"Saved: {news_out}  ({len(news_data['items'])} headlines, safe to git push)")
 
 
 if __name__ == "__main__":
