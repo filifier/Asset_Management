@@ -186,16 +186,58 @@ niente scraping dell'HTML, e ripubblichiamo solo titolo + fonte + link
 di ToS e copyright.
 
 `run.py` scarica i feed, li deduplica e **tagga ogni titolo** con i ticker
-dell'universo (matching sul nome societario e sul simbolo) e con ~12 temi
-macro (tassi, inflazione, petrolio, AI & chip, …). Il ranking per-utente
-avviene **nel browser** (il portafoglio vive lì): menzioni dei propri titoli
-pesano di più, poi temi macro, poi freschezza. La card "📰 Top 3 notizie per
-te" sta nella tab Portafoglio e si ri-ordina quando cambi le posizioni; la
-chat risponde a "che notizie ci sono?" con le stesse 3, linkate.
+dell'universo (matching sul nome societario e sul simbolo) e con ~16 temi
+di settore (tassi, inflazione, petrolio, energia, AI & chip, salute, auto,
+industria, consumo, …). **Non c'è machine learning**: è un classificatore a
+regole (regex) + un punteggio lineare, non clustering né embedding — è
+*content-based filtering* nella sua forma trasparente e verificabile.
 
-Limite onesto: le notizie sono fresche quanto l'ultima esecuzione di
-`run.py` + push. Il passo successivo naturale è una **GitHub Action**
-schedulata (gratis sui repo pubblici) che rigeneri `news.json` ogni poche ore.
+**Perché le news reagiscono al portafoglio anche per fondi/ETF** — il match
+per solo-nome non basta: un fondo (es. il BlackRock energia) non viene mai
+nominato nei titoli di giornale, e solo un pugno di mega-cap compare. Perciò
+ogni ticker dell'universo riceve dei **temi di settore**
+(`engine/news.py::build_ticker_sectors` → `docs/data/ticker_sectors.json`,
+classificatore a keyword sui nomi + override per simbolo): NVDA→`ai-chip`,
+BGF-SE→`energia`, una banca→`tassi`, ecc. Il ranking nel browser somma allora:
+*citazione diretta del ticker* (peso forte) + *sovrapposizione tra i temi
+della notizia e i temi di settore del portafoglio* (ciò che fa cambiare le
+news quando aggiungi/togli un asset) + *bonus dei temi preferiti dal profilo
+di rischio* + *freschezza*. Così la "📰 Top 3" (tab Portafoglio) e la Sezione
+"News rilevanti" (tab Analisi) rispondono davvero a portafoglio **e** profilo;
+la chat risponde a "che notizie ci sono?" con le stesse, linkate.
+
+I temi di settore sono euristici (un feed dati di settore reale sarebbe
+meglio: l'endpoint settore di Yahoo ora richiede autenticazione).
+
+## Aggiornamento automatico dei dati (`.github/workflows/`)
+
+La piattaforma è **self-service**: un nuovo utente si registra da solo, compila
+il profilo e il portafoglio (salvati nella *sua* riga Supabase), e **tutti i
+modelli sono calcolati dal vivo nel suo browser** sul suo portafoglio — non
+serve rieseguire nulla per un nuovo utente o un portafoglio modificato.
+
+L'unica cosa "statica" sono i **dati di mercato condivisi** (uguali per tutti):
+prezzi, storico macro, fattori Fama-French, notizie. Per tenerli freschi senza
+lavoro manuale, due **GitHub Action** schedulate (gratis sui repo pubblici):
+
+- **`refresh-market.yml`** — ogni 6 ore esegue `refresh_public.py`, che
+  rigenera `news.json`, `ticker_sectors.json`, `macro_history.json`,
+  `ff_factors.json` (dati puramente di mercato, nessuna posizione personale).
+- **`refresh-prices.yml`** — ogni giorno esegue `build_ticker_universe.py`,
+  che rigenera gli storici prezzi per-titolo (`docs/data/tickers/*.json`).
+
+Ogni job committa solo se qualcosa è cambiato; il push fa ripubblicare GitHub
+Pages. `scorecard.json` e `nav_history.json` restano generati da `run.py` in
+locale (dipendono dalla posizione personale del proprietario, esclusa dal repo).
+
+**Setup una-tantum su GitHub** (necessario perché i job possano committare):
+Settings → Actions → General → *Workflow permissions* → seleziona **"Read and
+write permissions"** → Save. Poi puoi lanciarli a mano da **Actions →
+(scegli il workflow) → Run workflow** per un primo test, senza aspettare il cron.
+
+Limite onesto: da IP datacenter Yahoo può occasionalmente limitare le
+richieste; in quel caso il job semplicemente non trova aggiornamenti e i dati
+esistenti restano al loro posto (nessun danno, riprova al giro dopo).
 
 ## Modelli quant istituzionali (`docs/quant.js`)
 

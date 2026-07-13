@@ -261,6 +261,16 @@ def main():
         json.dump(news_data, f, separators=(",", ":"), ensure_ascii=False)
     print(f"Saved: {news_out}  ({len(news_data['items'])} headlines, safe to git push)")
 
+    # Sector themes per ticker (keyword classifier over the universe) —
+    # lets the front-end match holdings to news BY TOPIC, so the news
+    # actually responds to the portfolio even for funds/ETFs never named
+    # in a headline. See engine/news.py::build_ticker_sectors.
+    sectors = news.build_ticker_sectors(os.path.join(HERE, "docs", "data", "ticker_list.json"))
+    sectors_out = os.path.join(HERE, "docs", "data", "ticker_sectors.json")
+    with open(sectors_out, "w") as f:
+        json.dump(sectors, f, separators=(",", ":"), ensure_ascii=False)
+    print(f"Saved: {sectors_out}  ({len(sectors)} tickers classified, safe to git push)")
+
 
 if __name__ == "__main__":
     main()

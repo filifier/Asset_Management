@@ -761,11 +761,13 @@ async function loadPortfolioState() {
 const NEWS_TOPIC_LABELS = {
   tassi: "tassi & banche centrali", inflazione: "inflazione", petrolio: "petrolio",
   oro: "oro", valute: "valute", volatilita: "volatilità", "ai-chip": "AI & chip",
-  energia: "energia pulita", utili: "utili societari", cripto: "cripto",
+  energia: "energia", utili: "utili societari", cripto: "cripto",
   azionario: "azionario", geopolitica: "geopolitica",
+  salute: "salute & farma", auto: "auto & EV", industria: "industria & difesa", consumo: "consumi",
 };
 let newsData = null;  // {generated, items} — loaded once per session
 let _newsLoading = null;  // in-flight promise, so concurrent callers don't double-fetch
+let tickerSectors = null;  // {BASE_SYMBOL: [themes]} — sector tags for content-based news matching
 
 async function loadNews() {
   if (newsData !== null) return newsData;
@@ -773,51 +775,73 @@ async function loadNews() {
   return _newsLoading;
 }
 
+// Loaded alongside news; used to match holdings to news BY TOPIC so the
+// news responds to the portfolio even for funds/ETFs never named in a
+// headline (built by engine/news.py::build_ticker_sectors).
+async function loadTickerSectors() {
+  if (tickerSectors === null) tickerSectors = (await fetchJSON("data/ticker_sectors.json")) || {};
+  return tickerSectors;
+}
+
 function newsBaseSymbol(sym) { return sym.split(".")[0].split("-")[0].toUpperCase(); }
 
-// Relevance: mentions of held tickers dominate, then macro topics, then
-// freshness (bonus fading to zero over ~48h). Returns [{item, mine}].
+// The set of sector themes the CURRENT portfolio is exposed to — the
+// union of each holding's sector tags. This is what makes the news react
+// to adding/removing an asset: change the holdings, change the themes.
+function portfolioThemes(holdings) {
+  const themes = new Set();
+  for (const h of holdings) {
+    for (const t of (tickerSectors && tickerSectors[newsBaseSymbol(h.symbol)]) || []) themes.add(t);
+  }
+  return themes;
+}
+
+// Relevance for the "Top 3": a direct mention of a held ticker is the
+// strongest signal; a news TOPIC that overlaps the portfolio's sector
+// themes is the next (this is what changes when you add/remove an asset,
+// even a fund never named in headlines); then freshness. Returns
+// [{item, mine, matchedThemes, s}].
 function newsTopPicks(items, holdings, n = 3) {
   const held = new Set(holdings.map(h => newsBaseSymbol(h.symbol)));
+  const themes = portfolioThemes(holdings);
   const now = Date.now();
   return items.map(item => {
     const mine = (item.tickers || []).filter(t => held.has(t));
-    let s = mine.length * 5;
-    if ((item.topics || []).length) s += 1;
+    const matchedThemes = (item.topics || []).filter(t => themes.has(t));
+    let s = mine.length * 5 + matchedThemes.length * 2;
     const hrs = (now - new Date(item.published).getTime()) / 3.6e6;
     s += Math.max(0, 2 - hrs / 24);
-    return { item, mine, s };
+    return { item, mine, matchedThemes, s };
   }).sort((a, b) => b.s - a.s).slice(0, n);
 }
 
-// Which macro/sector topics recur in news about the user's OWN holdings —
-// a data-driven stand-in for "what sector am I in", without asking a
-// separate question (the ticker universe + tagging we already have does
-// this better than a self-reported sector ever would).
+// The portfolio's sector themes, ranked by how many holdings share each —
+// a description of "what sectors am I in", derived from the holdings
+// themselves (not from whether they happen to appear in the news).
 function sectorTopicsFromHoldings(items, holdings) {
-  const held = new Set(holdings.map(h => newsBaseSymbol(h.symbol)));
   const counts = {};
-  for (const item of items) {
-    if (!(item.tickers || []).some(t => held.has(t))) continue;
-    for (const t of item.topics || []) counts[t] = (counts[t] || 0) + 1;
+  for (const h of holdings) {
+    for (const t of (tickerSectors && tickerSectors[newsBaseSymbol(h.symbol)]) || []) counts[t] = (counts[t] || 0) + 1;
   }
-  return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([t]) => t);
+  return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([t]) => t);
 }
 
-// Broader than newsTopPicks: not just "mentions my tickers" but "matches
-// my sector exposure and my investor profile" — e.g. a Conservativo with
-// tech holdings still sees more rate/inflation coverage than a Dinamico
-// with the same portfolio would. Returns [{item, mine, matchedTopics}].
+// Broader than newsTopPicks: matches news to the portfolio's SECTOR
+// themes and to the investor profile's preferred themes — so a
+// Conservativo and a Dinamico with the same holdings see a different mix,
+// and adding/removing an asset shifts the sector themes. Returns
+// [{item, mine, matchedTopics, s}].
 function newsRelevantForProfile(items, holdings, profile, n = 6) {
   const held = new Set(holdings.map(h => newsBaseSymbol(h.symbol)));
-  const sectorTopics = new Set(sectorTopicsFromHoldings(items, holdings));
+  const sectorTopics = portfolioThemes(holdings);
   const boostTopics = new Set((profile && PROFILE_TOPIC_BOOST[profile.label]) || []);
   const now = Date.now();
   return items.map(item => {
     const mine = (item.tickers || []).filter(t => held.has(t));
     const topics = item.topics || [];
     const matchedTopics = topics.filter(t => sectorTopics.has(t) || boostTopics.has(t));
-    let s = mine.length * 3 + matchedTopics.length * 2;
+    let s = mine.length * 4 + topics.filter(t => sectorTopics.has(t)).length * 2
+          + topics.filter(t => boostTopics.has(t)).length * 1;
     const hrs = (now - new Date(item.published).getTime()) / 3.6e6;
     s += Math.max(0, 2 - hrs / 24);
     return { item, mine, matchedTopics, s };
@@ -834,7 +858,7 @@ function newsAgo(iso) {
 
 async function renderNewsCard(container) {
   if (!container) return;
-  const data = await loadNews();
+  const [data] = await Promise.all([loadNews(), loadTickerSectors()]);
   if (!data.items || !data.items.length) { container.innerHTML = ""; return; }
   const picks = newsTopPicks(data.items, portfolioState.holdings);
   const rows = picks.map(({ item, mine }) => {
@@ -2258,7 +2282,7 @@ async function renderAnalysisTab(card) {
   }
 
   // ═══ SECTION 7 — Diversificazione: osservazioni dai numeri ═══
-  const newsForSection = await loadNews();
+  const [newsForSection] = await Promise.all([loadNews(), loadTickerSectors()]);
   const sectorTopicsForDiv = sectorTopicsFromHoldings(newsForSection.items || [], portfolioState.holdings);
   el.appendChild(buildSectionHeader(7, "Diversificazione",
     "Cosa dicono concentrazione, correlazioni, stili ed esposizioni macro sulla struttura del portafoglio — osservazioni, non consigli.",
@@ -2318,7 +2342,7 @@ async function load() {
     currentNav = card.meta.nav;
     appCard = card;
     document.getElementById("view-tabs").style.display = "flex";
-    loadNews();  // fire-and-forget: the news card and the chat both use it
+    loadNews(); loadTickerSectors();  // fire-and-forget: the news card and the chat both use them
 
     if (authConfigured()) {
       if (!window.supabase) throw new Error("Impossibile caricare il modulo di login (Supabase SDK).");

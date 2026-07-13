@@ -1,0 +1,45 @@
+name: Refresh market data (news + macro)
+
+# Keeps the SHARED market data fresh for every user, automatically and
+# for free. Regenerates news, sector tags, macro history and the
+# Fama-French factors — the files the in-browser models (OLS, Carhart)
+# and the news ranking read. No personal data is involved (see
+# refresh_public.py). GitHub Pages re-publishes on the resulting commit.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours (UTC)
+  workflow_dispatch: {}      # also runnable on demand from the Actions tab
+
+permissions:
+  contents: write            # allow the job to commit the refreshed data
+
+# If a run is still going when the next is due, don't stack them.
+concurrency:
+  group: refresh-market
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Regenerate public market data
+        run: python refresh_public.py
+      - name: Commit & push if anything changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data/news.json docs/data/ticker_sectors.json \
+                  docs/data/macro_history.json docs/data/ff_factors.json
+          if git diff --staged --quiet; then
+            echo "No changes — nothing to commit."
+          else
+            git commit -m "chore: auto-refresh market data + news [skip ci]"
+            git push
+          fi

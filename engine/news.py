@@ -56,12 +56,19 @@ TOPICS = {
     "oro":         r"\bgold\b",
     "valute":      r"\bdollar\b|\beuro\b|currenc|forex|\byen\b",
     "volatilita":  r"\bvix\b|volatilit|sell-?off|correction|crash|rout\b",
-    "ai-chip":     r"\ba\.?i\.?\b|artificial intelligence|\bchip|semiconductor",
-    "energia":     r"clean energy|renewable|solar|wind power|electric vehicle",
+    "ai-chip":     r"\ba\.?i\.?\b|artificial intelligence|\bchip|semiconductor|\bnvidia\b|data ?cent(er|re)|cloud comput",
+    # energy SECTOR broadly (moves every energy holding incl. clean-energy
+    # funds): oil/gas + renewables + utilities. "petrolio" stays the
+    # narrower crude-specific tag; energy news typically gets both.
+    "energia":     r"energy|\boil\b|crude|opec|\bgas\b|lng|renewable|solar|wind power|\butilit(y|ies)|power grid|electric vehicle|\bev\b",
     "utili":       r"earnings|quarterly result|guidance|profit",
     "cripto":      r"bitcoin|crypto|ethereum",
-    "azionario":   r"s&p ?500|nasdaq|dow jones|wall street|stock market|stocks\b",
-    "geopolitica": r"tariff|trade war|sanction|geopolit|election",
+    "azionario":   r"s&p ?500|nasdaq|dow jones|wall street|stock market|stocks\b|equit(y|ies)|russell",
+    "geopolitica": r"tariff|trade war|sanction|geopolit|election|war\b",
+    "salute":      r"pharma|\bdrug\b|biotech|\bfda\b|vaccine|clinical|weight[- ]loss|obesity|health ?care|medical",
+    "auto":        r"electric vehicle|\bev\b|automaker|car ?maker|vehicle sales|\bauto\b",
+    "industria":   r"aerospace|defen[cs]e|\bjet\b|manufactur|industrial|machinery|semis? plant",
+    "consumo":     r"retail|consumer|shopper|store sales|fast[- ]food|e-?commerce|spending",
 }
 _TOPIC_RE = {slug: re.compile(rx) for slug, rx in TOPICS.items()}
 
@@ -185,3 +192,74 @@ def fetch_news(ticker_list_path):
 
     items.sort(key=lambda x: x["published"], reverse=True)
     return {"generated": now.isoformat(), "items": items[:MAX_ITEMS]}
+
+
+# ── sector tagging of the ticker universe ──
+# Why: news headlines almost never name a specific fund/ETF and rarely
+# name anything but a handful of mega-caps, so matching a holding to news
+# ONLY by its name (fetch_news above) leaves most portfolios with no
+# signal — the news never changes when you add/remove such a holding.
+# Giving every ticker a small set of SECTOR THEMES (drawn from the same
+# TOPICS vocabulary) lets the front-end match holdings to news by TOPIC
+# too (content-based filtering), so a clean-energy fund surfaces energy
+# news, a bank surfaces rate news, etc. This is a transparent keyword
+# classifier over a curated universe — not ML — so it's reproducible and
+# easy to audit/extend. Real sector data from a provider would be better;
+# Yahoo's sector endpoint now needs auth, so we classify by name/symbol.
+
+# Symbols the name keywords can't catch (e.g. "NVIDIA Corporation" has no
+# "chip" in it). Base symbol (before "." / "-") -> themes.
+_SECTOR_BY_SYMBOL = {
+    "NVDA": ["ai-chip"], "AMD": ["ai-chip"], "INTC": ["ai-chip"], "QCOM": ["ai-chip"],
+    "ASML": ["ai-chip", "industria"], "AAPL": ["ai-chip", "consumo"], "MSFT": ["ai-chip"],
+    "GOOG": ["ai-chip"], "GOOGL": ["ai-chip"], "META": ["ai-chip"], "AMZN": ["ai-chip", "consumo"],
+    "ORCL": ["ai-chip"], "CRM": ["ai-chip"], "ADBE": ["ai-chip"], "IBM": ["ai-chip"],
+    "CSCO": ["ai-chip"], "SAP": ["ai-chip"], "NFLX": ["ai-chip", "consumo"], "PYPL": ["ai-chip", "consumo"],
+    "TSLA": ["auto", "ai-chip"], "STLA": ["auto"], "VOW": ["auto"], "VOW3": ["auto"],
+    "XOM": ["petrolio", "energia"], "CVX": ["petrolio", "energia"], "ENI": ["petrolio", "energia"],
+    "SRG": ["energia"], "SNAM": ["energia"], "ENEL": ["energia"], "NEE": ["energia"],
+    "POR": ["energia"], "PRY": ["energia", "industria"], "BGF": ["energia"], "WENS": ["energia"], "LIN": ["industria"],
+    "BAC": ["tassi"], "C": ["tassi"], "JPM": ["tassi"], "MS": ["tassi"], "GS": ["tassi"],
+    "WFC": ["tassi"], "ISP": ["tassi"], "UCG": ["tassi"], "PST": ["tassi"], "BRK": ["tassi"],
+    "V": ["consumo"], "MA": ["consumo"],
+    "SGLD": ["oro"], "AGGH": ["tassi"],
+    "LLY": ["salute"], "ABBV": ["salute"], "MRK": ["salute"], "PFE": ["salute"], "JNJ": ["salute"],
+    "NVO": ["salute"], "TMO": ["salute"], "UNH": ["salute"], "SHL": ["salute"], "XBI": ["salute"], "NTLA": ["salute"],
+    "BA": ["industria"], "GE": ["industria"], "CAT": ["industria"], "SIE": ["industria"], "MMM": ["industria"],
+    "KO": ["consumo"], "PEP": ["consumo"], "PG": ["consumo"], "COST": ["consumo"], "WMT": ["consumo"],
+    "MCD": ["consumo"], "SBUX": ["consumo"], "NKE": ["consumo"], "HD": ["consumo"], "DIS": ["consumo"],
+    "QQQ": ["ai-chip", "azionario"], "IWM": ["azionario"], "XDWS": ["consumo"],
+}
+# Name-keyword rules for the rest (broad ETFs, and anything not above).
+_SECTOR_NAME_RULES = [
+    ("energia",  r"energy|renewable|solar|utilit"),
+    ("oro",      r"\bgold\b"),
+    ("tassi",    r"\bbank\b|bond|aggregate|treasury|financ"),
+    ("salute",   r"health|pharma|biotech|medical"),
+    ("consumo",  r"consumer|staples|retail"),
+    ("ai-chip",  r"semiconductor|technology|nasdaq"),
+    ("azionario", r"s&p 500|msci world|all-world|ftse|total stock|dow jones|russell|emerging|emg|\bworld\b"),
+]
+_SECTOR_NAME_RE = [(slug, re.compile(rx, re.IGNORECASE)) for slug, rx in _SECTOR_NAME_RULES]
+
+
+def build_ticker_sectors(ticker_list_path):
+    """Map every ticker in the universe to its sector themes.
+    Returns {base_symbol: [themes]} — base symbol matches the front-end's
+    newsBaseSymbol() (before '.' and '-')."""
+    with open(ticker_list_path) as f:
+        universe = json.load(f)
+    out = {}
+    for t in universe:
+        base = t["symbol"].split(".")[0].split("-")[0].upper()
+        if base in out:
+            continue
+        themes = list(_SECTOR_BY_SYMBOL.get(base, []))
+        if not themes:
+            name = t["name"]
+            for slug, rx in _SECTOR_NAME_RE:
+                if rx.search(name) and slug not in themes:
+                    themes.append(slug)
+        if themes:
+            out[base] = themes
+    return out
