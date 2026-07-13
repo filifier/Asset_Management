@@ -8,3 +8,4 @@ data/scorecard.json
 # Python
 __pycache__/
 *.pyc
+quant_double_check.xlsx

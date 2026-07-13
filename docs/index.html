@@ -338,6 +338,23 @@
   .analysis-section .as-rule {
     border: none; border-top: 1px solid var(--border); margin: 8px 0 0;
   }
+  .analysis-section .as-score {
+    flex: 0 0 auto; font-size: 11.5px; font-weight: 700; white-space: nowrap;
+    padding: 3px 10px; border-radius: 999px; background: var(--neutral-bg);
+    color: var(--muted); border: 1px solid var(--border);
+  }
+
+  .qs-headline { display: flex; gap: 14px; flex-wrap: wrap; margin: 10px 0 12px; }
+  .qs-box {
+    flex: 1 1 180px; border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; background: var(--bg);
+  }
+  .qs-box .qs-label { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+  .qs-box .qs-value { font-size: 26px; font-weight: 800; color: var(--ink); }
+  .qs-box .qs-note { font-size: 11.5px; color: var(--muted); }
+  .qs-bar { height: 6px; border-radius: 999px; background: var(--border); margin: 6px 0 4px; overflow: hidden; }
+  .qs-bar > div { height: 100%; border-radius: 999px; background: var(--support); }
+  .qs-bar.risk > div { background: var(--caution); }
   .chart-controls {
     display: flex; gap: 6px; margin: 10px 0;
   }
@@ -555,6 +572,7 @@
 <script src="ols.js"></script>
 <script src="ff.js"></script>
 <script src="technical.js"></script>
+<script src="quant.js"></script>
 <script>
 const markSymbol = { supportive: "+", caution: "!", neutral: "·" };
 const markLabel = { supportive: "favorevole", caution: "attenzione", neutral: "neutro" };
@@ -1661,7 +1679,7 @@ function chatAnswer(qRaw, ctx) {
 
   // help
   if (has("aiuto", "help", "cosa posso", "che domande", "come funzioni", "cosa sai"))
-    return "Puoi chiedermi, ad esempio:\n• Come va il mio portafoglio?\n• Qual è il titolo migliore / peggiore?\n• Cosa muove i miei titoli?\n• Che notizie ci sono per me oggi?\n• Com'è la volatilità (VIX)? E i tassi?\n• Sono troppo concentrato?\n• Cos'è il MOVE / DXY / R² / VIF?";
+    return "Puoi chiedermi, ad esempio:\n• Come va il mio portafoglio?\n• Quanto posso perdere in una giornata nera? (VaR)\n• Come posso diversificare?\n• Qual è il titolo migliore / peggiore?\n• Cosa muove i miei titoli?\n• Che notizie ci sono per me oggi?\n• Com'è la volatilità (VIX)? E i tassi?\n• Sono troppo concentrato?\n• Cos'è il MOVE / DXY / R² / VIF?";
 
   // glossary / definitions
   if (has("cos'è", "cosa è", "cos e", "che cos", "significa", "spiega", "vuol dire")) {
@@ -1698,12 +1716,43 @@ function chatAnswer(qRaw, ctx) {
     ).join("\n");
   }
 
-  // technical / trend (RSI, momentum, ipercomprato…)
-  if (has("trend", "rsi", "ipercompr", "ipervend", "momentum", "tecnic", "in salita", "in discesa", "surriscald")) {
+  // technical / trend (RSI, momentum, ipercomprato…). "rsi" needs a word
+  // boundary: it's a substring of "diveRSIficare" and would hijack the
+  // diversification question below.
+  if (/\brsi\b/.test(q) || has("trend", "ipercompr", "ipervend", "momentum", "tecnic", "in salita", "in discesa", "surriscald")) {
     const techs = (ctx && ctx.technicals) || [];
     const avail = techs.filter(t => t.tech);
     if (!avail.length) return "Aggiungi un titolo con abbastanza storico per vedere gli indicatori tecnici.";
     return avail.map(e => "• " + technicalNarrative(e.tech, e.name)).join("\n");
+  }
+
+  // VaR / tail risk ("var" with word boundary: it's a substring of
+  // "variazione"/"varie")
+  if (/\bvar\b/.test(q) || has("value at risk", "perdita massima", "quanto posso perdere", "giornata nera", "giorno nero", "scenario peggiore")) {
+    const v = ctx && ctx.quant && ctx.quant.varres;
+    if (!v) return "Serve un portafoglio con almeno ~100 giorni di storico per calcolare il Value at Risk.";
+    return varNarrative(v);
+  }
+
+  // GARCH / volatility regime
+  if (has("garch", "volatilità futura", "regime di volatil", "cluster")) {
+    const g = ctx && ctx.quant && ctx.quant.garch;
+    if (!g) return "Serve un portafoglio con almeno ~150 giorni di storico per stimare il GARCH.";
+    return garchNarrative(g);
+  }
+
+  // diversification ideas
+  if (has("diversific", "ribilanci", "riadatt", "spunti", "come miglioro il portafoglio")) {
+    const ins = (ctx && ctx.divInsights) || [];
+    if (!ins.length) return "Apri la tab \"Analisi & Previsione\" con almeno un titolo prezzato per generare le osservazioni di diversificazione.";
+    return ins.map(b => "• " + b.text).join("\n") + "\n<em>(osservazioni sui tuoi dati, non consigli di investimento)</em>";
+  }
+
+  // efficiency / Sharpe
+  if (has("sharpe", "efficien", "rischio/rendimento", "rendimento corretto")) {
+    const m = ctx && ctx.quant && ctx.quant.met;
+    if (!m) return "Serve un portafoglio con storico sufficiente per le metriche di efficienza.";
+    return `Il tuo portafoglio rende <strong>${m.annRet.toFixed(1)}%</strong> annuo con una volatilità del ${m.annVol.toFixed(0)}%: Sharpe ratio <strong>${m.sharpe.toFixed(2)}</strong> (${m.sharpe >= 1 ? "buono: il rendimento ripaga bene il rischio" : m.sharpe >= 0.5 ? "discreto" : "basso: molto rischio per il rendimento ottenuto"}). Peggior calo dal massimo: ${m.maxDD.toFixed(0)}%.`;
   }
 
   // factor sensitivity
@@ -1771,7 +1820,7 @@ function renderChatThread(threadEl) {
 function buildChatCard() {
   const card = document.createElement("div");
   card.className = "chart-card";
-  const suggestions = ["Come va il mio portafoglio?", "Che notizie ci sono per me?", "Com'è il trend dei miei titoli?", "Cosa muove i miei titoli?", "Com'è la volatilità (VIX)?", "Sono troppo concentrato?"];
+  const suggestions = ["Come va il mio portafoglio?", "Quanto posso perdere in una giornata nera?", "Come posso diversificare?", "Che notizie ci sono per me?", "Com'è il trend dei miei titoli?", "Cosa muove i miei titoli?", "Sono troppo concentrato?"];
   card.innerHTML = `
     <h2>💬 Chiedi alla piattaforma</h2>
     <div class="private-note" style="margin-bottom:0">Fai una domanda sul tuo portafoglio o sui dati — le risposte sono basate sui tuoi numeri. Versione beta (senza AI generativa, ancora).</div>
@@ -1801,12 +1850,179 @@ function buildChatCard() {
   return card;
 }
 
-// Header for one of the 3 main methodology sections in the Analysis tab.
-function buildSectionHeader(num, title, subtitle) {
+// Header for one of the model sections in the Analysis tab. scoreText
+// (optional) renders as a small chip on the right, e.g. "Score 62/100".
+function buildSectionHeader(num, title, subtitle, scoreText) {
   const el = document.createElement("div");
   el.className = "analysis-section";
   el.innerHTML = `<span class="as-num">${num}</span>
-    <span class="as-text"><h1>${title}</h1><div class="as-sub">${subtitle}</div><hr class="as-rule"></span>`;
+    <span class="as-text"><h1>${title}</h1><div class="as-sub">${subtitle}</div><hr class="as-rule"></span>
+    ${scoreText ? `<span class="as-score">${scoreText}</span>` : ""}`;
+  return el;
+}
+
+// ── quant model cards (models computed in quant.js) ──
+
+// Top summary: every model's score in one honest table + the two
+// headline axes the user asked the models to answer: how EFFICIENT the
+// portfolio performs, and how much RISK it is running.
+function buildQuantScorecard(q) {
+  const el = document.createElement("div");
+  el.className = "chart-card";
+  const effScore = scoreEfficiency(q.met);
+  const riskScore = scoreOverallRisk(scoreGarchRisk(q.garch), scoreVarRisk(q.varres), scoreDiversification(q.div));
+  if (effScore == null && riskScore == null) {
+    el.innerHTML = `<h2>🎯 Quant scorecard</h2><div class="private-note">Aggiungi almeno un titolo prezzato con abbastanza storico per calcolare i punteggi dei modelli.</div>`;
+    return el;
+  }
+  const rows = [
+    q.met && { m: "Efficienza (Sharpe)", s: effScore, hi: "più alto = meglio", read: `Sharpe ${q.met.sharpe.toFixed(2)} — rendimento ${q.met.annRet.toFixed(1)}%/anno per ${q.met.annVol.toFixed(0)}% di volatilità` },
+    q.garch && { m: "GARCH — rischio volatilità", s: scoreGarchRisk(q.garch), hi: "più alto = più rischio", read: `vol condizionata ${q.garch.condVolAnn.toFixed(0)}% annua (media ${q.garch.uncondVolAnn.toFixed(0)}%)` },
+    q.varres && { m: "VaR — rischio di coda", s: scoreVarRisk(q.varres), hi: "più alto = più rischio", read: `perdita 1-su-100 in un giorno: ${q.varres.hist.var99.toFixed(1)}%` },
+    q.tsPort && { m: "TSMOM — trend", s: scoreTrend(q.tsPort), hi: "50 = laterale", read: `trend ${q.tsPort.label}` },
+    q.div && { m: "Diversificazione", s: scoreDiversification(q.div), hi: "più alto = meglio", read: `${q.div.effN ? q.div.effN.toFixed(1) : "—"} titoli "effettivi"${q.div.avgCorr != null ? `, correlazione media ${q.div.avgCorr.toFixed(2)}` : ""}` },
+  ].filter(Boolean).map(r => `<tr><td class="factor-name">${r.m}</td><td class="num"><strong>${r.s}</strong>/100</td><td style="font-size:11px;color:var(--muted)">${r.hi}</td><td style="font-size:12px">${r.read}</td></tr>`).join("");
+
+  const detail = q.met ? `
+    <details class="reg-details">
+      <summary>Mostra le metriche di efficienza (dettaglio tecnico)</summary>
+      <div class="reg-table-wrap"><table class="reg-table">
+        <thead><tr><th>Metrica</th><th>Valore</th><th>Cosa dice</th></tr></thead>
+        <tbody>
+          <tr><td class="factor-name">Rendimento annualizzato (CAGR)</td><td class="num">${q.met.annRet.toFixed(1)}%</td><td style="font-size:12px">crescita composta media annua</td></tr>
+          <tr><td class="factor-name">Volatilità annualizzata</td><td class="num">${q.met.annVol.toFixed(1)}%</td><td style="font-size:12px">ampiezza tipica delle oscillazioni</td></tr>
+          <tr><td class="factor-name">Sharpe ratio</td><td class="num">${q.met.sharpe.toFixed(2)}</td><td style="font-size:12px">extra-rendimento per unità di rischio (>1 buono, >2 raro)</td></tr>
+          <tr><td class="factor-name">Sortino ratio</td><td class="num">${q.met.sortino != null ? q.met.sortino.toFixed(2) : "—"}</td><td style="font-size:12px">come Sharpe ma penalizza solo la volatilità al ribasso</td></tr>
+          <tr><td class="factor-name">Max drawdown</td><td class="num">${q.met.maxDD.toFixed(1)}%</td><td style="font-size:12px">peggior calo dal massimo nel periodo</td></tr>
+          <tr><td class="factor-name">Calmar ratio</td><td class="num">${q.met.calmar != null ? q.met.calmar.toFixed(2) : "—"}</td><td style="font-size:12px">rendimento annuo / peggior calo</td></tr>
+        </tbody>
+      </table></div>
+    </details>` : "";
+
+  el.innerHTML = `
+    <h2>🎯 Quant scorecard — efficienza e rischio in un colpo d'occhio</h2>
+    <div class="private-note">Ogni modello qui sotto risponde a una delle due domande chiave: <em>quanto rende bene per il rischio che corre?</em> e <em>quanto rischio sta correndo?</em> I punteggi sono letture descrittive dei dati, non segnali operativi.</div>
+    <div class="qs-headline">
+      ${effScore != null ? `<div class="qs-box"><div class="qs-label">EFFICIENZA</div><div class="qs-value">${effScore}<span style="font-size:14px;color:var(--muted)">/100</span></div><div class="qs-bar"><div style="width:${effScore}%"></div></div><div class="qs-note">quanto il rendimento ripaga il rischio (da Sharpe)</div></div>` : ""}
+      ${riskScore != null ? `<div class="qs-box"><div class="qs-label">RISCHIO</div><div class="qs-value">${riskScore}<span style="font-size:14px;color:var(--muted)">/100</span></div><div class="qs-bar risk"><div style="width:${riskScore}%"></div></div><div class="qs-note">volatilità + code + concentrazione (GARCH, VaR, HHI)</div></div>` : ""}
+    </div>
+    <div class="reg-table-wrap"><table class="reg-table">
+      <thead><tr><th>Modello</th><th>Score</th><th>Direzione</th><th>Lettura</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    ${detail}`;
+  return el;
+}
+
+function buildGarchCard(g) {
+  const el = document.createElement("div");
+  el.className = "chart-card";
+  if (!g) {
+    el.innerHTML = `<h2>Volatilità condizionata (GARCH 1,1)</h2><div class="private-note">Servono almeno ~150 giorni di storico del portafoglio per stimare il modello.</div>`;
+    return el;
+  }
+  el.innerHTML = `
+    <h2>Volatilità condizionata (GARCH 1,1)</h2>
+    <div class="private-note" style="font-weight:600;color:var(--ink)">${garchNarrative(g)}</div>
+    <div class="private-note">La volatilità non è costante: si muove a <em>cluster</em> (giornate agitate seguono giornate agitate). Il GARCH stima la volatilità "di oggi" dandole memoria: α pesa lo shock di ieri, β la volatilità di ieri.</div>
+    <details class="reg-details">
+      <summary>Mostra i parametri (dettaglio tecnico)</summary>
+      <div class="reg-table-wrap"><table class="reg-table">
+        <thead><tr><th>Parametro</th><th>Valore</th><th>Significato</th></tr></thead>
+        <tbody>
+          <tr><td class="factor-name">α (reattività agli shock)</td><td class="num">${g.alpha.toFixed(3)}</td><td style="font-size:12px">quanto uno scossone di ieri alza la volatilità di oggi</td></tr>
+          <tr><td class="factor-name">β (memoria)</td><td class="num">${g.beta.toFixed(3)}</td><td style="font-size:12px">quanto la volatilità di ieri persiste oggi</td></tr>
+          <tr><td class="factor-name">α + β (persistenza)</td><td class="num">${g.persistence.toFixed(3)}</td><td style="font-size:12px">vicino a 1 = i regimi di volatilità durano a lungo</td></tr>
+          <tr><td class="factor-name">Vol. incondizionata</td><td class="num">${g.uncondVolAnn.toFixed(1)}%</td><td style="font-size:12px">volatilità media di lungo periodo (annualizzata)</td></tr>
+          <tr><td class="factor-name">Vol. condizionata (oggi)</td><td class="num">${g.condVolAnn.toFixed(1)}%</td><td style="font-size:12px">volatilità stimata per domani, dato il presente</td></tr>
+          <tr><td class="factor-name">Previsione media 10 giorni</td><td class="num">${g.forecast10dVolAnn.toFixed(1)}%</td><td style="font-size:12px">il modello riporta gradualmente la vol verso la media</td></tr>
+        </tbody>
+      </table></div>
+      <div class="private-note" style="margin-top:10px">Stima: GARCH(1,1) gaussiano con variance targeting, massima verosimiglianza su griglia (riproducibile — stessi numeri nell'Excel di verifica). n=${g.n} rendimenti giornalieri.</div>
+    </details>`;
+  return el;
+}
+
+function buildVarCard(v) {
+  const el = document.createElement("div");
+  el.className = "chart-card";
+  if (!v) {
+    el.innerHTML = `<h2>Value at Risk (VaR)</h2><div class="private-note">Servono almeno ~100 giorni di storico del portafoglio per un VaR sensato.</div>`;
+    return el;
+  }
+  const eur = (x) => x != null ? `€${Math.round(x).toLocaleString("it-IT")}` : "—";
+  const pct = (x) => x != null ? x.toFixed(2) + "%" : "—";
+  el.innerHTML = `
+    <h2>Value at Risk (VaR) — quanto puoi perdere nei giorni peggiori</h2>
+    <div class="private-note" style="font-weight:600;color:var(--ink)">${varNarrative(v)}</div>
+    <div class="private-note">Tre metodi indipendenti, come nei fondi: se convergono, la stima è solida; se divergono, la distribuzione ha code più pesanti di una normale.</div>
+    <div class="reg-table-wrap"><table class="reg-table">
+      <thead><tr><th>Metodo</th><th>VaR 95%</th><th>VaR 99%</th><th>Orizzonte</th></tr></thead>
+      <tbody>
+        <tr><td class="factor-name">Simulazione storica</td><td class="num">${pct(v.hist.var95)}</td><td class="num">${pct(v.hist.var99)}</td><td style="font-size:12px">1 giorno</td></tr>
+        <tr><td class="factor-name">Varianza-covarianza (normale)</td><td class="num">${pct(v.param.var95)}</td><td class="num">${pct(v.param.var99)}</td><td style="font-size:12px">1 giorno</td></tr>
+        ${v.paramGarch ? `<tr><td class="factor-name">Parametrico con vol GARCH</td><td class="num">${pct(v.paramGarch.var95)}</td><td class="num">${pct(v.paramGarch.var99)}</td><td style="font-size:12px">1 giorno</td></tr>` : ""}
+        <tr><td class="factor-name">Monte Carlo (bootstrap, ${v.mc10d.nSims.toLocaleString("it-IT")} scenari)</td><td class="num">${pct(v.mc10d.var95)}</td><td class="num">${pct(v.mc10d.var99)}</td><td style="font-size:12px">10 giorni</td></tr>
+      </tbody>
+    </table></div>
+    ${v.value ? `<div class="private-note" style="margin-top:8px">Sul valore attuale del portafoglio (≈ ${eur(v.value)}): VaR 99% 1g ≈ <strong>${eur(v.eur99)}</strong>, Expected Shortfall 95% ≈ <strong>${eur(v.eurEs95)}</strong> (perdita media nel 5% peggiore), Monte Carlo 99% a 10 giorni ≈ <strong>${eur(v.eur99mc10d)}</strong>.</div>` : ""}
+    <details class="reg-details">
+      <summary>Come leggere questi numeri</summary>
+      <div class="private-note" style="margin-top:10px">
+        VaR 99% a 1 giorno = la perdita che statisticamente viene superata solo 1 giornata su 100. L'<em>Expected Shortfall</em> risponde alla domanda successiva: "e quando va peggio di così, quanto perdo in media?". Il Monte Carlo qui non assume la distribuzione normale: ricampiona ${v.n} rendimenti reali del tuo portafoglio (bootstrap) su orizzonti di 10 giorni, seme fisso per riproducibilità. Nessuno di questi è un limite garantito: il futuro può superare il passato.
+      </div>
+    </details>`;
+  return el;
+}
+
+function buildTsmomCard(tsmomByAsset, tsPort) {
+  const el = document.createElement("div");
+  el.className = "chart-card";
+  const avail = tsmomByAsset.filter(e => e.t);
+  if (!avail.length && !tsPort) {
+    el.innerHTML = `<h2>Time-Series Momentum (TSMOM)</h2><div class="private-note">Servono almeno ~130 giorni di storico per stimare i trend multi-orizzonte.</div>`;
+    return el;
+  }
+  const bullets = [];
+  if (tsPort) bullets.push(tsmomNarrative(tsPort, "Portafoglio (aggregato)"));
+  for (const e of avail) bullets.push(tsmomNarrative(e.t, e.name));
+
+  const rows = (tsPort ? [{ name: "Portafoglio", t: tsPort }] : []).concat(avail.map(e => ({ name: e.name, t: e.t }))).map(({ name, t }) => {
+    const cells = [21, 63, 126, 252].map(h => {
+      const s = t.signals.find(x => x.h === h);
+      return `<td class="num">${s ? `${s.ret >= 0 ? "+" : ""}${s.ret.toFixed(0)}% ${s.sign > 0 ? "▲" : s.sign < 0 ? "▼" : "•"}` : "—"}</td>`;
+    }).join("");
+    return `<tr><td class="factor-name">${name}</td>${cells}<td class="num">${t.emaSign > 0 ? "▲ sopra" : t.emaSign < 0 ? "▼ sotto" : "—"}</td><td class="num"><strong>${t.score >= 0 ? "+" : ""}${t.score.toFixed(2)}</strong></td></tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <h2>Time-Series Momentum (TSMOM) — il trend continuerà?</h2>
+    ${bullets.map(b => `<div class="private-note" style="font-weight:600;color:var(--ink)">${b}</div>`).join("")}
+    <div class="private-note">Il TSMOM guarda il segno del rendimento passato su più orizzonti (1/3/6/12 mesi) più l'incrocio delle medie mobili esponenziali EMA(20)/EMA(100): storicamente i trend tendono a persistere più di quanto il caso giustifichi — ma non sempre, e le inversioni sono brusche.</div>
+    <details class="reg-details">
+      <summary>Mostra i segnali per orizzonte (dettaglio tecnico)</summary>
+      <div class="reg-table-wrap"><table class="reg-table">
+        <thead><tr><th>Serie</th><th>1 mese</th><th>3 mesi</th><th>6 mesi</th><th>12 mesi</th><th>EMA 20/100</th><th>Score</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <div class="private-note" style="margin-top:10px">Score = media dei segni (da −1 = tutto in ribasso a +1 = tutto in rialzo). ▲/▼ = rendimento positivo/negativo su quell'orizzonte.</div>
+    </details>`;
+  return el;
+}
+
+function buildDiversificationCard(insights, div) {
+  const el = document.createElement("div");
+  el.className = "interp-card";
+  const weightsLine = (div && div.weights.length > 1)
+    ? `<div class="ic-sub">Pesi attuali: ${div.weights.map(w => `${w.name} ${(w.weight * 100).toFixed(0)}%`).join(" · ")}${div.effN ? ` — ≈ ${div.effN.toFixed(1)} titoli "effettivi" (HHI ${div.hhi.toFixed(2)})` : ""}.</div>`
+    : `<div class="ic-sub">Osservazioni costruite sui numeri dei modelli qui sopra e sul contesto macro/news.</div>`;
+  el.innerHTML = `
+    <h2>Spunti di diversificazione — cosa noterebbe un analista</h2>
+    ${weightsLine}
+    <ul class="interp-bullets">
+      ${insights.map(b => `<li><span class="ib-icon">${b.icon}</span><span class="ib-text">${b.text}</span></li>`).join("")}
+    </ul>
+    <div class="interp-close">Queste sono osservazioni educative derivate dai tuoi dati — non raccomandazioni di acquisto o vendita. Ogni scelta va valutata rispetto ai tuoi obiettivi, orizzonte e situazione personale (il tuo profilo: usa il bottone "⚙ Profilo" per tenerlo aggiornato).</div>`;
   return el;
 }
 
@@ -1908,14 +2124,47 @@ async function renderAnalysisTab(card) {
   // ── technical indicators per held asset ──
   const techByAsset = picked.map(a => ({ name: a.label, tech: computeTechnicals(a.history) }));
 
-  chatContext = { card, holdings: chatHoldings, factorsPos: [...cPos], factorsNeg: [...cNeg], regressionByAsset: regressionResults, technicals: techByAsset };
+  // ── run the quant models (quant.js) on the weighted portfolio ──
+  const pricedForFF = chatHoldings.filter(h => h.priced);
+  const totalMV = pricedForFF.reduce((s, h) => s + h.marketValue, 0);
+  const ffHoldings = (pricedForFF.length && totalMV > 0)
+    ? pricedForFF.map(h => ({ name: h.name, weight: h.marketValue / totalMV, history: tickerHistoryCache[h.symbol] || [] }))
+    : [];
+  const portRet = ffHoldings.length ? buildPortfolioReturns(ffHoldings) : [];
+  const retVals = portRet.map(r => r[1]);
+  const ffRes = (portRet.length && analysisFFFactors && analysisFFFactors.length)
+    ? runCarhartRegression(portRet, analysisFFFactors) : null;
+  // average daily risk-free over the sample (Ken French RF), for Sharpe
+  let rfDaily = 0;
+  if (analysisFFFactors && portRet.length) {
+    const rfMap = new Map(analysisFFFactors.map(r => [r[0], r[5]]));
+    const rfs = portRet.map(([d]) => rfMap.get(d)).filter(x => x != null);
+    if (rfs.length) rfDaily = rfs.reduce((s, x) => s + x, 0) / rfs.length;
+  }
+  const met = retVals.length ? perfMetrics(retVals, rfDaily) : null;
+  const garch = retVals.length ? garchFit(retVals) : null;
+  const varres = retVals.length ? varAnalysis(retVals, garch ? garch.condVolDaily : null, totalMV || null) : null;
+  const tsmomByAsset = picked.map(a => ({ name: a.label, t: tsmom(a.history.map(h => h[1]).filter(v => v > 0)) }));
+  let tsPort = null;
+  if (retVals.length >= 130) {
+    const idx = []; let w = 100;
+    for (const r of retVals) { w *= 1 + r / 100; idx.push(w); }
+    tsPort = tsmom(idx);
+  }
+  const divStats = ffHoldings.length ? diversificationStats(ffHoldings) : null;
+  const quant = { met, garch, varres, tsPort, tsmomByAsset, div: divStats };
+
+  chatContext = { card, holdings: chatHoldings, factorsPos: [...cPos], factorsNeg: [...cNeg], regressionByAsset: regressionResults, technicals: techByAsset, quant };
 
   // ── plain-language interpretation, prominent, right after the chart:
-  // a cross-cutting executive summary before the 3 detailed sections ──
+  // a cross-cutting executive summary before the detailed sections ──
   if (regressionResults.length || card.pillars.some(p => p.key === "macro")) {
     const interp = buildInterpretationCard(card, regressionResults);
     if (interp) el.appendChild(interp);
   }
+
+  // ── quant scorecard: every model's score, efficiency vs risk ──
+  el.appendChild(buildQuantScorecard(quant));
 
   // ═══ SECTION 1 — Regressione OLS: sensibilità di ogni titolo ai fattori macro ═══
   el.appendChild(buildSectionHeader(1, "Regressione OLS", "Quanto ogni titolo si è storicamente mosso insieme a tassi, VIX, oro, petrolio e dollaro."));
@@ -1947,15 +2196,7 @@ async function renderAnalysisTab(card) {
 
   // ═══ SECTION 2 — Fama-French-Carhart: il portafoglio contro i 4 fattori di stile accademici ═══
   el.appendChild(buildSectionHeader(2, "Fama-French-Carhart", "Il portafoglio nel suo complesso, letto con i fattori di stile che il mondo accademico usa per spiegare i rendimenti azionari."));
-  const pricedForFF = chatHoldings.filter(h => h.priced);
-  const totalMV = pricedForFF.reduce((s, h) => s + h.marketValue, 0);
-  if (pricedForFF.length && totalMV > 0 && analysisFFFactors && analysisFFFactors.length) {
-    const ffHoldings = pricedForFF.map(h => ({
-      weight: h.marketValue / totalMV,
-      history: tickerHistoryCache[h.symbol] || [],
-    }));
-    const portRet = buildPortfolioReturns(ffHoldings);
-    const ffRes = runCarhartRegression(portRet, analysisFFFactors);
+  if (ffRes) {
     el.appendChild(buildCarhartCard(ffRes));
   } else {
     const c = document.createElement("div");
@@ -1976,16 +2217,34 @@ async function renderAnalysisTab(card) {
     el.appendChild(c);
   }
 
+  // ═══ SECTION 4 — GARCH: la volatilità ha memoria ═══
+  el.appendChild(buildSectionHeader(4, "GARCH — volatilità condizionata",
+    "La volatilità si muove a cluster: il modello econometrico stima quella di oggi e la proietta sui prossimi giorni.",
+    garch ? `Rischio ${scoreGarchRisk(garch)}/100` : null));
+  el.appendChild(buildGarchCard(garch));
+
+  // ═══ SECTION 5 — Value at Risk: la perdita nei giorni peggiori ═══
+  el.appendChild(buildSectionHeader(5, "Value at Risk (VaR)",
+    "Massima perdita potenziale a un dato livello di confidenza — con tre metodi indipendenti: storico, varianza-covarianza e Monte Carlo.",
+    varres ? `Rischio ${scoreVarRisk(varres)}/100` : null));
+  el.appendChild(buildVarCard(varres));
+
+  // ═══ SECTION 6 — TSMOM: trend following multi-orizzonte ═══
+  el.appendChild(buildSectionHeader(6, "Time-Series Momentum (TSMOM)",
+    "Il trend passato su più orizzonti (1/3/6/12 mesi) e le medie mobili esponenziali: i trend tendono a persistere.",
+    tsPort ? `Trend ${scoreTrend(tsPort)}/100` : null));
+  el.appendChild(buildTsmomCard(tsmomByAsset, tsPort));
+
   // ── shared macro context: current levels + recent trend of the macro
-  // factors (from scorecard.json — market data, not personal). This is
-  // the same data Section 1's OLS regressions run against, and what
-  // drives Section 3's volatility regime. ──
+  // factors (from scorecard.json — market data, not personal). The same
+  // data Section 1's OLS runs against, and the regime behind Sections
+  // 3–5's volatility readings. ──
   const contextPillars = card.pillars.filter(p => p.key === "macro" || p.key === "outlook");
   if (contextPillars.length) {
     const ctxIntro = document.createElement("div");
     ctxIntro.className = "private-note";
     ctxIntro.style.margin = "18px 0 6px";
-    ctxIntro.innerHTML = `<strong>Contesto di mercato oggi</strong> — livello attuale e trend recente dei fattori macro. Sono gli stessi dati incrociati nella Sezione 1 (regressione OLS) e collegati al regime di volatilità della Sezione 3 (indicatori tecnici).`;
+    ctxIntro.innerHTML = `<strong>Contesto di mercato oggi</strong> — livello attuale e trend recente dei fattori macro. Sono gli stessi dati incrociati nella Sezione 1 (regressione OLS) e collegati al regime di volatilità delle Sezioni 3–5.`;
     el.appendChild(ctxIntro);
 
     const legend = document.createElement("div");
@@ -1998,9 +2257,28 @@ async function renderAnalysisTab(card) {
     for (const p of contextPillars) el.appendChild(pillarCard(p));
   }
 
-  // ═══ SECTION 4 — News rilevanti: settori del portafoglio + profilo utente ═══
-  el.appendChild(buildSectionHeader(4, "News rilevanti", "Notizie selezionate incrociando i settori del tuo portafoglio e il tuo profilo da investitore."));
+  // ═══ SECTION 7 — Diversificazione: osservazioni dai numeri ═══
   const newsForSection = await loadNews();
+  const sectorTopicsForDiv = sectorTopicsFromHoldings(newsForSection.items || [], portfolioState.holdings);
+  el.appendChild(buildSectionHeader(7, "Diversificazione",
+    "Cosa dicono concentrazione, correlazioni, stili ed esposizioni macro sulla struttura del portafoglio — osservazioni, non consigli.",
+    divStats ? `Score ${scoreDiversification(divStats)}/100` : null));
+  if (divStats) {
+    const insights = buildDiversificationInsights({
+      div: divStats, met, garch, varres, carhart: ffRes,
+      olsNeg: [...cNeg], tsmomByAsset, sectorTopics: sectorTopicsForDiv,
+    });
+    chatContext.divInsights = insights;
+    el.appendChild(buildDiversificationCard(insights, divStats));
+  } else {
+    const c = document.createElement("div");
+    c.className = "chart-card";
+    c.innerHTML = `<div class="private-note">Aggiungi almeno un titolo prezzato per vedere qui le osservazioni di diversificazione.</div>`;
+    el.appendChild(c);
+  }
+
+  // ═══ SECTION 8 — News rilevanti: settori del portafoglio + profilo utente ═══
+  el.appendChild(buildSectionHeader(8, "News rilevanti", "Notizie selezionate incrociando i settori del tuo portafoglio e il tuo profilo da investitore."));
   if (!authConfigured() || userProfile) {
     const picks = newsRelevantForProfile(newsForSection.items || [], portfolioState.holdings, userProfile);
     el.appendChild(buildRelevantNewsCard(picks, userProfile));

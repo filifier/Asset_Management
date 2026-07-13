@@ -160,11 +160,15 @@ La dashboard pubblica è divisa in tre viste:
   al primo accesso**, vedi sotto): componi il portafoglio, vedi performance e
   concentrazione, e la card **"Top 3 notizie per te"** (vedi sotto).
 - **Analisi & Previsione** — la parte **quant pura**, guidata dal portafoglio,
-  in 4 sezioni numerate: **1. Regressione OLS** macro per titolo, **2.
-  Fama-French-Carhart** (vedi sotto), **3. Indicatori tecnici**, **4. News
-  rilevanti** (settore del portafoglio + profilo investitore, vedi sotto).
-  Sopra le sezioni: il grafico "Andamento" e l'interpretazione in parole
-  semplici. Reagisce al portafoglio.
+  in 8 sezioni numerate, una per modello: **1. Regressione OLS** macro per
+  titolo, **2. Fama-French-Carhart**, **3. Indicatori tecnici**, **4. GARCH**
+  (volatilità condizionata), **5. Value at Risk** (storico, varianza-covarianza,
+  Monte Carlo), **6. TSMOM** (trend following multi-orizzonte), **7.
+  Diversificazione** (osservazioni dai numeri), **8. News rilevanti** (settore
+  + profilo investitore). Sopra le sezioni: il grafico "Andamento",
+  l'interpretazione in parole semplici e la **Quant scorecard** (ogni modello
+  dà uno score 0–100; due assi di sintesi: Efficienza e Rischio). Reagisce al
+  portafoglio.
 - **Assistente** — la chat rule-based (`buildChatCard` in `docs/index.html`):
   domande in linguaggio naturale sul portafoglio/mercato, risposte pescate dai
   dati già calcolati. Nessun LLM ancora (beta a costo zero); il prossimo passo
@@ -192,6 +196,46 @@ chat risponde a "che notizie ci sono?" con le stesse 3, linkate.
 Limite onesto: le notizie sono fresche quanto l'ultima esecuzione di
 `run.py` + push. Il passo successivo naturale è una **GitHub Action**
 schedulata (gratis sui repo pubblici) che rigeneri `news.json` ogni poche ore.
+
+## Modelli quant istituzionali (`docs/quant.js`)
+
+I modelli di rischio e trend che usano i fondi, calcolati **nel browser** sui
+soli prezzi di chiusura già pubblicati — zero API a pagamento:
+
+- **GARCH(1,1)** con variance targeting: la volatilità non è costante, si
+  muove a cluster; il modello stima la vol condizionata "di oggi" e la
+  proietta a 10 giorni. Fit per massima verosimiglianza su **griglia**
+  (α passo 0,02→0,005; β 0,01→0,0025): scelta deliberata, trasparente e
+  riproducibile 1:1 in Python/Excel, invece di un ottimizzatore black-box.
+  Nota: la finestra di raffinamento è ±0,02 su entrambi i parametri (una
+  cella intera di griglia per lato) — con ±0,01 il vero ottimo può cadere
+  fuori finestra su creste di verosimiglianza piatte (successo davvero).
+- **Value at Risk** con i tre metodi classici: simulazione storica
+  (+ Expected Shortfall), varianza-covarianza (normale, anche in variante
+  con vol GARCH), e **Monte Carlo bootstrap** (10.000 percorsi da 10 giorni
+  ricampionando i rendimenti reali, RNG mulberry32 seed 42 → riproducibile
+  bit-per-bit). Espresso in % e in € sul valore attuale del portafoglio.
+- **TSMOM** (Time-Series Momentum): segno del rendimento passato su 1/3/6/12
+  mesi + incrocio EMA(20)/EMA(100), per titolo e per il portafoglio.
+- **Metriche di efficienza**: CAGR, volatilità, Sharpe (RF = serie giornaliera
+  di Ken French), Sortino, max drawdown, Calmar.
+- **Diversificazione**: HHI, titoli "effettivi" (1/HHI), correlazioni a coppie.
+
+Ogni modello produce uno **score 0–100** con direzione dichiarata (per i
+modelli di rischio, più alto = più rischio). La sezione "Diversificazione"
+genera **osservazioni** derivate dai numeri (concentrazione, correlazioni,
+tilt di stile dal Carhart, esposizioni macro comuni dall'OLS, regime GARCH),
+ognuna con il numero che la giustifica — mai raccomandazioni di
+acquisto/vendita: "descrive, non prescrive" vale anche qui.
+
+**Double-check indipendente**: `tools/quant_check.py` replica tutti i modelli
+in Python (stesse convenzioni: std di popolazione, quantili interpolati,
+stessa griglia GARCH, stesso stream Monte Carlo) e genera
+`quant_double_check.xlsx` — un workbook dove tutto ciò che può essere una
+formula Excel viva LO È (ricorsione GARCH inclusa: cambi α e si ricalcola),
+con celle di confronto motore↔Excel. Verificato: browser JS ≡ Python a piena
+precisione su tutti i modelli, Monte Carlo bit-identico. Il file è in
+`.gitignore` (artefatto di verifica, non va pubblicato).
 
 ## Analisi fattoriale accademica Fama-French-Carhart (`docs/ff.js`)
 
