@@ -152,28 +152,54 @@ entrano come **variazione di livello** (differenza prima, non %) perché
 possono attraversare lo zero — una "% di rendimento" su uno spread non ha
 senso. Vedi `RATE_LIKE_FACTORS` in `engine/regression.py`.
 
-## Tre tab: Portafoglio, Analisi & Previsione, Assistente
+## L'app: sidebar con Home, Analisi, Chat, Profilo
 
-La dashboard pubblica è divisa in tre viste:
+L'interfaccia è una **sidebar sinistra** (stile app moderna, off-canvas su
+mobile) con quattro sezioni; in basso l'utente collegato, il profilo e il
+logout:
 
-- **Il tuo portafoglio** — la parte personale (login-gated, con **profilazione
-  al primo accesso**, vedi sotto): componi il portafoglio, vedi performance e
-  concentrazione, e la card **"Top 3 notizie per te"** (vedi sotto).
-- **Analisi & Previsione** — la parte **quant pura**, guidata dal portafoglio,
-  in 8 sezioni numerate, una per modello: **1. Regressione OLS** macro per
-  titolo, **2. Fama-French-Carhart**, **3. Indicatori tecnici**, **4. GARCH**
-  (volatilità condizionata), **5. Value at Risk** (storico, varianza-covarianza,
-  Monte Carlo), **6. TSMOM** (trend following multi-orizzonte), **7.
-  Diversificazione** (osservazioni dai numeri), **8. News rilevanti** (settore
-  + profilo investitore). Sopra le sezioni: il grafico "Andamento",
-  l'interpretazione in parole semplici e la **Quant scorecard** (ogni modello
-  dà uno score 0–100; due assi di sintesi: Efficienza e Rischio). Reagisce al
-  portafoglio.
-- **Assistente** — la chat rule-based (`buildChatCard` in `docs/index.html`):
-  domande in linguaggio naturale sul portafoglio/mercato, risposte pescate dai
-  dati già calcolati. Nessun LLM ancora (beta a costo zero); il prossimo passo
-  sarebbe un LLM dietro una Supabase Edge Function riusando il contesto già
-  assemblato qui.
+- **Home** — la parte personale (login-gated, con **profilazione al primo
+  accesso**): componi il portafoglio con la ricerca o con **⬆ Importa**
+  (vedi sotto), vedi la card discorsiva **"In breve"**, performance,
+  concentrazione e la **"Top 3 notizie per te"**.
+- **Analisi** — la parte **quant pura**, guidata dal portafoglio. In cima la
+  card **"In parole semplici"** (vedi sotto) e la **Quant scorecard** (score
+  0–100 per modello; due assi: Efficienza e Rischio), poi le 8 sezioni per
+  modello: **1. Regressione OLS**, **2. Fama-French-Carhart**, **3. Indicatori
+  tecnici**, **4. GARCH**, **5. Value at Risk**, **6. TSMOM**,
+  **7. Diversificazione**, **8. News rilevanti**. Reagisce al portafoglio.
+- **Chat** — assistente **stile LLM**: conversazioni multiple con storico
+  ("+ Nuova chat", titoli, elimina), persistite per-utente in localStorage.
+  Il motore oggi è rule-based (`chatAnswer`); struttura messaggi e storage
+  sono già quelli che userebbe un backend generativo (Supabase Edge Function
+  + LLM, passo futuro), quindi il cambio motore non toccherà l'interfaccia.
+- **Profilo** — riepilogo del profilo investitore (etichetta, barra del
+  punteggio, descrizione) + il questionario modificabile in place.
+
+### Import da estratto conto (`openImportModal` in `docs/index.html`)
+
+Il bottone **⬆ Importa** legge un documento bancario (PDF testuale, CSV/TXT o
+testo incollato) **interamente nel browser** — il file non viene caricato da
+nessuna parte. Pipeline trasparente: estrazione testo (per i PDF, pdf.js da
+CDN caricato solo al bisogno, con ricostruzione delle righe per posizione
+verticale — serve per le tabelle bancarie), poi per ogni riga match del titolo
+contro l'universo (simbolo o token del nome) ed estrazione dell'importo (il
+numero più grande della riga in formato europeo, con date/anni/ISIN rimossi
+prima). Segue una **schermata di revisione** dove l'utente conferma/corregge
+importi e data prima di aggiungere. Limiti onesti, dichiarati nel modal: i PDF
+scansionati (immagini) non sono leggibili (niente OCR), e si riconoscono solo
+i titoli dell'universo della piattaforma.
+
+### Il layer "consulente" discorsivo (`buildAdvisorNarrative`)
+
+Sopra i modelli c'è una lettura **in prosa per l'utente medio**: quanto vale
+il portafoglio e chi traina, quanto ha reso in rapporto al rischio (Sharpe
+tradotto in parole), il rischio di *adesso* in euro concreti (GARCH + VaR),
+trend e struttura, con una chiusura calibrata sul **profilo di rischio**
+(es. a un Conservativo con un portafoglio concentrato viene fatto notare il
+divario). Ogni frase riformula un numero calcolato dai modelli — niente
+opinioni — e chiude con il disclaimer: informazione, **non consulenza**, non
+sostituisce un consulente abilitato.
 
 ## Notizie: "Top 3 per te" (`engine/news.py` + `docs/data/news.json`)
 

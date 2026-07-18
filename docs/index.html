@@ -232,12 +232,12 @@
     margin-bottom: 10px; gap: 10px;
   }
   .search-hero h3 { font-size: 15px; margin: 0; color: var(--ink); }
-  #pf-refresh {
+  #pf-refresh, #pf-import {
     font-size: 12px; font-weight: 600; color: var(--support);
     background: var(--support-bg); border: 1px solid var(--support);
     border-radius: 999px; padding: 5px 12px; cursor: pointer; white-space: nowrap;
   }
-  #pf-refresh:hover { background: #dcecdf; }
+  #pf-refresh:hover, #pf-import:hover { background: #dcecdf; }
   #pf-refresh:disabled { opacity: 0.55; cursor: default; }
   .search-box { position: relative; }
   .search-box .s-icon {
@@ -540,29 +540,196 @@
     padding: 4px 10px; border-radius: 999px; background: var(--support-bg); color: var(--support);
     cursor: pointer; border: none;
   }
+
+  /* ═══ app shell: left sidebar (Claude-style) + main column ═══ */
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 232px; flex: 0 0 232px; background: #ffffff;
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  body.no-sidebar .sidebar, body.no-sidebar .topbar { display: none; }
+  .sb-brand {
+    display: flex; align-items: center; gap: 9px; padding: 18px 16px 14px;
+    font-size: 15.5px; font-weight: 800; color: var(--ink);
+  }
+  .sb-brand .logo {
+    width: 30px; height: 30px; border-radius: 8px; background: var(--support);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 15px; flex: 0 0 auto;
+  }
+  .sb-brand small { display: block; font-size: 10.5px; font-weight: 500; color: var(--muted); }
+  .sb-nav { display: flex; flex-direction: column; gap: 2px; padding: 6px 10px; }
+  .sb-item {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 9px 12px; border: none; background: none; border-radius: 9px;
+    font-size: 13.5px; font-weight: 600; color: var(--muted); cursor: pointer;
+    text-align: left; font-family: inherit;
+  }
+  .sb-item:hover { background: var(--neutral-bg); color: var(--ink); }
+  .sb-item.active { background: var(--support-bg); color: var(--support); }
+  .sb-item .ico { width: 20px; text-align: center; flex: 0 0 auto; }
+  .sb-spacer { flex: 1; }
+  .sb-foot { padding: 12px 14px 16px; border-top: 1px solid var(--border); font-size: 12px; }
+  .sb-foot .sb-email { color: var(--ink); font-weight: 600; word-break: break-all; margin-bottom: 6px; }
+  .sb-foot .sb-profile-line { color: var(--muted); margin-bottom: 8px; }
+  .sb-foot button {
+    font-size: 12px; font-weight: 600; color: var(--muted); background: var(--neutral-bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 5px 12px; cursor: pointer;
+  }
+  .sb-foot button:hover { color: var(--ink); }
+  .main { flex: 1; min-width: 0; padding: 26px 16px 64px; }
+  .topbar { display: none; }
+  .sb-backdrop { display: none; }
+
+  @media (max-width: 860px) {
+    .sidebar {
+      position: fixed; left: 0; top: 0; z-index: 60; height: 100vh;
+      transform: translateX(-100%); transition: transform 0.22s ease;
+      box-shadow: 4px 0 24px rgba(0,0,0,0.10);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sb-backdrop {
+      display: none; position: fixed; inset: 0; z-index: 50; background: rgba(31,42,36,0.35);
+    }
+    .sb-backdrop.show { display: block; }
+    .topbar {
+      display: flex; align-items: center; gap: 10px; margin: -10px -4px 16px;
+      padding: 4px 0 12px; border-bottom: 1px solid var(--border);
+    }
+    .topbar .tb-toggle {
+      font-size: 19px; background: none; border: 1px solid var(--border); border-radius: 9px;
+      padding: 4px 11px; cursor: pointer; color: var(--ink);
+    }
+    .topbar .tb-title { font-weight: 800; font-size: 15px; }
+    .main { padding-top: 14px; }
+  }
+
+  /* ═══ profile tab ═══ */
+  .profile-summary {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px 22px; margin-bottom: 18px;
+  }
+  .profile-summary h2 { margin: 0 0 4px; font-size: 17px; }
+  .ps-label { font-size: 22px; font-weight: 800; color: var(--support); margin: 8px 0 2px; }
+  .ps-bar { height: 8px; border-radius: 999px; background: var(--border); margin: 10px 0 6px; overflow: hidden; }
+  .ps-bar > div { height: 100%; border-radius: 999px; background: var(--support); }
+  .ps-scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+  .ps-desc { font-size: 13.5px; color: var(--ink); line-height: 1.55; margin-top: 10px; }
+
+  /* ═══ chat: LLM-style layout with session history ═══ */
+  .chat-shell { display: flex; gap: 14px; align-items: stretch; }
+  .chat-side {
+    flex: 0 0 190px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 4px;
+    max-height: 560px; overflow-y: auto;
+  }
+  .cs-new {
+    display: block; width: 100%; font-size: 12.5px; font-weight: 700; color: #fff;
+    background: var(--support); border: none; border-radius: 9px; padding: 8px 10px;
+    cursor: pointer; margin-bottom: 6px;
+  }
+  .cs-item {
+    display: flex; align-items: center; gap: 6px; padding: 7px 9px; border-radius: 8px;
+    font-size: 12px; color: var(--muted); cursor: pointer; border: none; background: none;
+    text-align: left; width: 100%; font-family: inherit;
+  }
+  .cs-item:hover { background: var(--neutral-bg); color: var(--ink); }
+  .cs-item.active { background: var(--support-bg); color: var(--support); font-weight: 700; }
+  .cs-item .cs-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cs-item .cs-del { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 0 2px; }
+  .cs-item .cs-del:hover { color: var(--caution); }
+  .chat-main { flex: 1; min-width: 0; }
+  @media (max-width: 700px) {
+    .chat-shell { flex-direction: column; }
+    .chat-side { flex: none; max-height: 160px; }
+  }
+
+  /* ═══ import modal ═══ */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 80; background: rgba(31,42,36,0.45);
+    display: flex; align-items: flex-start; justify-content: center; padding: 40px 14px;
+    overflow-y: auto;
+  }
+  .modal {
+    background: var(--card); border-radius: 16px; max-width: 640px; width: 100%;
+    padding: 22px 24px; box-shadow: 0 18px 60px rgba(0,0,0,0.25);
+  }
+  .modal h2 { margin: 0 0 6px; font-size: 17px; }
+  .modal .m-close { float: right; border: none; background: none; font-size: 18px; cursor: pointer; color: var(--muted); }
+  .drop-zone {
+    border: 2px dashed var(--border); border-radius: 12px; padding: 26px 16px;
+    text-align: center; color: var(--muted); font-size: 13.5px; cursor: pointer; margin: 12px 0;
+  }
+  .drop-zone.drag { border-color: var(--support); background: var(--support-bg); color: var(--support); }
+  .import-paste {
+    width: 100%; min-height: 90px; border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; font-size: 12.5px; font-family: ui-monospace, monospace; resize: vertical;
+  }
+  .import-row { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+  .import-row input[type="number"] { width: 110px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; }
+  .import-row .ir-name { flex: 1; min-width: 0; }
+  .import-row .ir-name small { color: var(--muted); display: block; }
+  .import-unmatched { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .import-actions { display: flex; gap: 10px; margin-top: 14px; align-items: center; flex-wrap: wrap; }
+  .import-actions .primary {
+    font-size: 13.5px; font-weight: 700; color: #fff; background: var(--support);
+    border: none; border-radius: 9px; padding: 9px 18px; cursor: pointer;
+  }
+  .import-actions .primary:disabled { opacity: 0.5; cursor: default; }
+
+  /* ═══ advisor (discursive) card ═══ */
+  .advisor-card {
+    background: linear-gradient(135deg, #f4faf6 0%, #ffffff 55%);
+    border: 1px solid var(--support); border-radius: 16px;
+    padding: 22px 24px; margin-bottom: 20px; line-height: 1.62;
+  }
+  .advisor-card h2 { margin: 0 0 2px; font-size: 17px; display: flex; align-items: center; gap: 8px; }
+  .advisor-card .adv-sub { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  .advisor-card p { font-size: 14px; margin: 0 0 12px; }
+  .advisor-card p:last-of-type { margin-bottom: 0; }
+  .advisor-card .adv-disclaimer {
+    font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--border);
+    margin-top: 14px; padding-top: 10px;
+  }
 </style>
 </head>
-<body>
-<div class="wrap">
-  <header>
-    <h1>Portfolio BI</h1>
-    <p>Scorecard trasparente — descrive lo stato, non prescrive decisioni</p>
-  </header>
+<body class="no-sidebar">
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-brand">
+      <span class="logo">📊</span>
+      <span>Portfolio BI<small>analisi &amp; contesto</small></span>
+    </div>
+    <nav class="sb-nav" id="sb-nav">
+      <button type="button" class="sb-item active" data-view="dashboard"><span class="ico">🏠</span>Home</button>
+      <button type="button" class="sb-item" data-view="analysis"><span class="ico">📈</span>Analisi</button>
+      <button type="button" class="sb-item" data-view="chat"><span class="ico">💬</span>Chat</button>
+      <button type="button" class="sb-item" data-view="profile"><span class="ico">👤</span>Profilo</button>
+    </nav>
+    <div class="sb-spacer"></div>
+    <div class="sb-foot" id="sb-user"></div>
+  </aside>
+  <div class="sb-backdrop" id="sb-backdrop"></div>
 
-  <div id="loading">Caricamento scorecard…</div>
-  <div id="error"></div>
+  <main class="main">
+    <div class="topbar">
+      <button type="button" class="tb-toggle" id="sb-toggle">☰</button>
+      <span class="tb-title">Portfolio BI</span>
+    </div>
+    <div class="wrap">
+      <div id="loading">Caricamento scorecard…</div>
+      <div id="error"></div>
 
-  <div class="view-tabs" id="view-tabs" style="display:none">
-    <button type="button" class="view-tab-btn active" data-view="dashboard">Il tuo portafoglio</button>
-    <button type="button" class="view-tab-btn" data-view="analysis">Analisi &amp; Previsione</button>
-    <button type="button" class="view-tab-btn" data-view="chat">Assistente</button>
-  </div>
+      <div id="content"></div>
+      <div id="analysis-content" style="display:none"></div>
+      <div id="chat-content" style="display:none"></div>
+      <div id="profile-content" style="display:none"></div>
 
-  <div id="content"></div>
-  <div id="analysis-content" style="display:none"></div>
-  <div id="chat-content" style="display:none"></div>
-
-  <p class="disclaimer">Uso personale e informativo. Non è consulenza finanziaria.</p>
+      <p class="disclaimer">Uso personale e informativo. Non è consulenza finanziaria.</p>
+    </div>
+  </main>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -710,7 +877,8 @@ async function getTickerHistory(symbol) {
 let portfolioState = { portfolioValue: "", holdings: [] };
 let currentUser = null;
 let userProfile = null;  // {score, label, desc, answers} — computeRiskProfile() result, or null until answered
-let _profileScreenActive = false;  // guards the profile form against being wiped by background auth re-renders
+let _profileScreenActive = false;  // guards the onboarding form against being wiped by background auth re-renders
+let _renderedForUid = null;  // uid the app is currently rendered for — skip redundant re-renders (see renderGated)
 let _saveTimer = null;
 
 // Per-user localStorage cache for the investor profile — a fallback for
@@ -883,17 +1051,7 @@ function buildPrivateSection() {
   el.className = "private";
   const todayIso = new Date().toISOString().slice(0, 10);
 
-  const accountBar = (authConfigured() && currentUser)
-    ? `<div class="account-bar">
-         <span>Accesso come <strong>${currentUser.email}</strong> — il portafoglio è salvato nel tuo account.</span>
-         <span class="ab-actions">
-           ${userProfile ? `<button type="button" class="profile-badge" id="pf-edit-profile" title="Modifica il tuo profilo">⚙ Profilo: ${userProfile.label}</button>` : ""}
-           <button type="button" id="pf-logout">Esci</button>
-         </span>
-       </div>` : "";
-
   el.innerHTML = `
-    ${accountBar}
     <div class="private-head"><h2>Il tuo portafoglio</h2></div>
     <div class="private-note">
       Il tuo portafoglio è salvato in modo sicuro nel tuo account e lo ritrovi
@@ -904,7 +1062,10 @@ function buildPrivateSection() {
     <div class="search-hero">
       <div class="sh-top">
         <h3>Aggiungi una posizione</h3>
-        <button type="button" id="pf-refresh" title="Aggiorna ai prezzi più recenti disponibili">↻ Aggiorna prezzi</button>
+        <span style="display:flex;gap:8px">
+          <button type="button" id="pf-import" title="Importa i titoli da un estratto conto o documento bancario">⬆ Importa</button>
+          <button type="button" id="pf-refresh" title="Aggiorna ai prezzi più recenti disponibili">↻ Aggiorna prezzi</button>
+        </span>
       </div>
       <div class="search-box">
         <span class="s-icon">🔍</span>
@@ -921,20 +1082,14 @@ function buildPrivateSection() {
       </div>
     </div>
 
+    <div id="pf-advisor"></div>
     <div id="pf-perf"></div>
     <div class="holdings-list" id="pf-holdings"></div>
     <div id="private-results"></div>
     <div id="pf-news"></div>
   `;
 
-  const logoutBtn = el.querySelector("#pf-logout");
-  if (logoutBtn) logoutBtn.addEventListener("click", async () => { await authSignOut(); });
-
-  const editProfileBtn = el.querySelector("#pf-edit-profile");
-  if (editProfileBtn) editProfileBtn.addEventListener("click", () => {
-    _profileScreenActive = true;  // protect the edit form from background auth re-renders too
-    renderProfileScreen("edit", () => { _profileScreenActive = false; render(appCard); });  // re-render either way (save or cancel)
-  });
+  el.querySelector("#pf-import").addEventListener("click", () => openImportModal());
 
   const valueInput = el.querySelector("#pf-value");
   const searchInput = el.querySelector("#pf-search");
@@ -1210,11 +1365,14 @@ function pillarCard(p) {
 // personal portfolio (and the analysis that depends on it) needs an
 // account.
 function renderLoginScreen() {
+  document.body.classList.add("no-sidebar");  // full-page login, no app chrome
+  switchView("dashboard");
   const content = document.getElementById("content");
   content.innerHTML = "";
-  const gatedNote = `<div class="chart-card"><div class="private-note">Accedi nella tab "Il tuo portafoglio" per costruire il portafoglio e vedere qui l'analisi.</div></div>`;
+  const gatedNote = `<div class="chart-card"><div class="private-note">Accedi per costruire il portafoglio e vedere qui l'analisi.</div></div>`;
   document.getElementById("analysis-content").innerHTML = gatedNote;
   document.getElementById("chat-content").innerHTML = gatedNote;
+  document.getElementById("profile-content").innerHTML = gatedNote;
 
   let mode = "signin"; // or "signup"
   const card = document.createElement("div");
@@ -1273,16 +1431,20 @@ function renderLoginScreen() {
 // modes:
 //   "onboarding" — shown right after login when no profile is saved yet;
 //     mandatory (no cancel), replaces the whole app like the login screen.
-//   "edit" — reopened later from the account bar ("⚙ Profilo"); pre-
-//     filled with the saved answers, has a cancel button, and only
-//     replaces the "Il tuo portafoglio" tab content (Analysis/chat stay).
-function renderProfileScreen(mode, onDone) {
-  const content = document.getElementById("content");
-  content.innerHTML = "";
+//   "edit" — embedded in the "Profilo" sidebar section; pre-filled with
+//     the saved answers, has a cancel button.
+// targetEl (optional): render into this container instead of replacing
+// the Home content — used by the Profilo section.
+function renderProfileScreen(mode, onDone, targetEl) {
+  const content = targetEl || document.getElementById("content");
+  if (!targetEl) content.innerHTML = "";
   if (mode === "onboarding") {
-    const gatedNote = `<div class="chart-card"><div class="private-note">Rispondi alle domande nella tab "Il tuo portafoglio" per iniziare — servono a mostrarti le notizie e i contenuti più adatti al tuo profilo.</div></div>`;
+    document.body.classList.add("no-sidebar");  // like the login screen: no app chrome yet
+    switchView("dashboard");
+    const gatedNote = `<div class="chart-card"><div class="private-note">Rispondi prima alle 5 domande del profilo — servono a mostrarti le notizie e i contenuti più adatti a te.</div></div>`;
     document.getElementById("analysis-content").innerHTML = gatedNote;
     document.getElementById("chat-content").innerHTML = gatedNote;
+    document.getElementById("profile-content").innerHTML = gatedNote;
   }
 
   const answers = Object.assign({}, (userProfile && userProfile.answers) || {});
@@ -1347,15 +1509,315 @@ function renderProfileScreen(mode, onDone) {
 // gated). Everything analytical (chart, per-asset regressions, market
 // context) lives in the "Analisi & Previsione" tab, driven by this same
 // portfolio.
+// ═══ Import: read a bank statement / portfolio document and turn its
+// rows into holdings. Transparent pipeline, all in the browser:
+//   1. get text (PDF via pdf.js loaded on demand, CSV/TXT, or pasted)
+//   2. per line: match a security from OUR universe (symbol or name
+//      tokens) + extract the biggest European-format number as the
+//      invested-amount candidate
+//   3. review screen: user confirms/edits amounts and date, then adds.
+// Honest limits, stated in the modal: scanned/image PDFs aren't readable
+// (no OCR), and only securities in the platform's universe can be
+// recognized (we can only analyze what we have price data for).
+
+const _IMPORT_STOPWORDS = new Set(["the", "inc", "corp", "corporation", "company", "co", "plc",
+  "ag", "se", "sa", "spa", "nv", "holdings", "holding", "group", "ltd", "limited", "trust",
+  "etf", "etc", "ucits", "usd", "eur", "acc", "dist", "shares", "fund", "index", "core",
+  "physical", "aktiengesellschaft", "incorporated"]);
+
+function _significantTokens(name) {
+  return name.toLowerCase().replace(/[^a-zà-ù0-9 ]/g, " ").split(/\s+/)
+    .filter(t => t.length >= 3 && !_IMPORT_STOPWORDS.has(t));
+}
+
+// European-format number: "4.503,00" → 4503, "1,234.56" → 1234.56, "450,3" → 450.3
+function _parseEuroNumber(s) {
+  s = s.replace(/\s/g, "");
+  const lastC = s.lastIndexOf(","), lastD = s.lastIndexOf(".");
+  if (lastC >= 0 && lastD >= 0) {
+    s = lastC > lastD ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+  } else if (lastC >= 0) {
+    const dec = s.length - lastC - 1;
+    s = dec <= 2 ? s.slice(0, lastC).replace(/,/g, "") + "." + s.slice(lastC + 1) : s.replace(/,/g, "");
+  } else if (lastD >= 0) {
+    const dec = s.length - lastD - 1;
+    if (dec > 2 || (s.match(/\./g) || []).length > 1) s = s.replace(/\./g, "");
+  }
+  const v = parseFloat(s);
+  return isFinite(v) ? v : NaN;
+}
+
+// Biggest plausible money amount in the line (bank rows: the market
+// value is normally the largest figure — quantities and unit prices are
+// smaller). Dates, years and ISINs are stripped first so they can't win.
+function _extractAmount(line) {
+  const cleaned = line
+    .replace(/\b[A-Z]{2}[A-Z0-9]{9}[0-9]\b/g, " ")            // ISINs
+    .replace(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b/g, " ") // dates
+    .replace(/\b(19|20)\d{2}\b/g, " ");                       // bare years
+  // NOTE: no spaces inside a number token — allowing them merges adjacent
+  // table columns ("qta 10  421,00" would become 10421). Italian bank
+  // docs use "1.234,56", which this handles.
+  const tokens = cleaned.match(/\d[\d.,]*\d|\d/g) || [];
+  let best = null;
+  for (const t of tokens) {
+    const v = _parseEuroNumber(t.trim());
+    if (isFinite(v) && v >= 1 && v < 1e9 && (best === null || v > best)) best = v;
+  }
+  return best;
+}
+
+// Match one document line to a security in the universe. Symbol match
+// (word boundary) wins; otherwise the first two significant name tokens
+// must all appear. Returns the FIRST universe entry that matches (US
+// listing first in the curated list), or null.
+function _matchUniverseLine(line) {
+  const low = " " + line.toLowerCase() + " ";
+  for (const t of tickerList) {
+    const symBase = t.symbol.split(".")[0].toLowerCase();
+    if (symBase.length >= 3 && new RegExp("\\b" + symBase.replace(/[-]/g, "[-\\s]?") + "\\b", "i").test(line)) return t;
+    const toks = _significantTokens(t.name).slice(0, 2);
+    if (!toks.length) continue;
+    const allIn = toks.every(tok =>
+      tok.length >= 5 ? low.includes(tok) : new RegExp("\\b" + tok + "\\b").test(low));
+    if (allIn) return t;
+  }
+  return null;
+}
+
+// text → {matches: [{symbol,name,exchange,amount,line}], unmatched: [line], isins: [..]}
+function parseImportText(text) {
+  const seen = new Set(), matches = [], unmatched = [], isins = new Set();
+  for (let raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/[;\t]+/g, "  ").trim();
+    if (line.length < 3) continue;
+    (line.match(/\b[A-Z]{2}[A-Z0-9]{9}[0-9]\b/g) || []).forEach(i => isins.add(i));
+    const hit = _matchUniverseLine(line);
+    if (!hit) {
+      // only keep plausible security rows in the unmatched report (has
+      // letters AND a number) — skips headers/footers noise
+      if (/[a-zA-Z]{4,}/.test(line) && /\d/.test(line)) unmatched.push(line.slice(0, 90));
+      continue;
+    }
+    const key = hit.symbol.split(".")[0].split("-")[0];
+    if (seen.has(key)) continue;
+    seen.add(key);
+    matches.push({ symbol: hit.symbol, name: hit.name, exchange: hit.exchange,
+                   amount: _extractAmount(line), line: line.slice(0, 110) });
+  }
+  return { matches, unmatched: unmatched.slice(0, 8), isins: [...isins] };
+}
+
+// pdf.js loaded from CDN only when the user actually imports a PDF.
+let _pdfjsLoading = null;
+function _loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve();
+  if (!_pdfjsLoading) {
+    _pdfjsLoading = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
+      s.onload = () => {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+        resolve();
+      };
+      s.onerror = () => reject(new Error("Impossibile caricare il lettore PDF (rete?)"));
+      document.head.appendChild(s);
+    });
+  }
+  return _pdfjsLoading;
+}
+
+// Extract text from a PDF, reconstructing LINES by grouping glyphs that
+// share the same vertical position on the page (bank tables need this —
+// naive extraction scrambles columns and rows).
+async function _pdfToText(arrayBuffer) {
+  await _loadPdfJs();
+  const doc = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pages = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const tc = await (await doc.getPage(p)).getTextContent();
+    const rows = new Map();  // rounded y → [{x, str}]
+    for (const it of tc.items) {
+      if (!it.str || !it.str.trim()) continue;
+      const y = Math.round(it.transform[5] / 3) * 3;  // 3pt tolerance
+      if (!rows.has(y)) rows.set(y, []);
+      rows.get(y).push({ x: it.transform[4], str: it.str });
+    }
+    const lines = [...rows.entries()].sort((a, b) => b[0] - a[0])
+      .map(([, items]) => items.sort((a, b) => a.x - b.x).map(i => i.str).join(" "));
+    pages.push(lines.join("\n"));
+  }
+  return pages.join("\n");
+}
+
+function openImportModal() {
+  const back = document.createElement("div");
+  back.className = "modal-backdrop";
+  back.innerHTML = `
+    <div class="modal">
+      <button type="button" class="m-close" title="Chiudi">✕</button>
+      <h2>⬆ Importa da estratto conto</h2>
+      <div class="private-note" style="margin:0 0 4px">
+        Carica il documento del tuo portafoglio (estratto conto titoli, rendiconto) e la
+        piattaforma riconosce i titoli e gli importi. Poi <strong>controlli e confermi tu</strong> ogni riga.
+      </div>
+      <div class="drop-zone" id="imp-drop">
+        📄 Trascina qui il file (PDF, CSV o TXT)<br>oppure <u>clicca per sceglierlo</u>
+        <input type="file" id="imp-file" accept=".pdf,.csv,.txt" style="display:none">
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin:0 0 6px">Oppure incolla le righe del documento:</div>
+      <textarea class="import-paste" id="imp-paste" placeholder="es.  NVIDIA CORP  US67066G1040  qta 10  valore 4.503,00 EUR"></textarea>
+      <div class="import-actions" style="margin-top:8px">
+        <button type="button" class="primary" id="imp-parse">Analizza</button>
+        <span id="imp-status" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div id="imp-results"></div>
+      <div class="private-note" style="margin:14px 0 0;font-size:11.5px">
+        Limiti onesti: i PDF scansionati (immagini) non sono leggibili; vengono riconosciuti solo
+        i titoli presenti nell'universo della piattaforma (~100 tra azioni, ETF e fondi — quelli
+        di cui abbiamo lo storico prezzi). Il documento resta nel tuo browser: non viene caricato da nessuna parte.
+      </div>
+    </div>`;
+  document.body.appendChild(back);
+  const close = () => back.remove();
+  back.querySelector(".m-close").addEventListener("click", close);
+  back.addEventListener("click", (e) => { if (e.target === back) close(); });
+
+  const drop = back.querySelector("#imp-drop");
+  const fileInput = back.querySelector("#imp-file");
+  const paste = back.querySelector("#imp-paste");
+  const status = back.querySelector("#imp-status");
+  const results = back.querySelector("#imp-results");
+
+  async function handleFile(file) {
+    if (!file) return;
+    status.textContent = `Leggo ${file.name}…`;
+    try {
+      let text;
+      if (/\.pdf$/i.test(file.name)) text = await _pdfToText(await file.arrayBuffer());
+      else text = await file.text();
+      paste.value = text.slice(0, 20000);
+      showResults(parseImportText(text));
+      status.textContent = "";
+    } catch (e) {
+      status.textContent = "Errore nella lettura: " + e.message;
+    }
+  }
+  drop.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => handleFile(fileInput.files[0]));
+  ["dragover", "dragleave", "drop"].forEach(ev => drop.addEventListener(ev, (e) => {
+    e.preventDefault();
+    drop.classList.toggle("drag", ev === "dragover");
+    if (ev === "drop") handleFile(e.dataTransfer.files[0]);
+  }));
+  back.querySelector("#imp-parse").addEventListener("click", () => showResults(parseImportText(paste.value)));
+
+  function showResults({ matches, unmatched, isins }) {
+    const heldBases = new Set(portfolioState.holdings.map(h => newsBaseSymbol(h.symbol)));
+    if (!matches.length) {
+      results.innerHTML = `<div class="private-note" style="margin-top:12px">Nessun titolo riconosciuto${isins.length ? ` (ISIN trovati ma non mappati: ${isins.slice(0,4).join(", ")})` : ""}. Prova a incollare le righe con i nomi dei titoli, o aggiungili con la ricerca.</div>`;
+      return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    results.innerHTML = `
+      <div style="font-size:13.5px;font-weight:700;margin:14px 0 2px">Titoli riconosciuti — controlla e conferma</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
+        L'importo proposto è il numero più grande trovato sulla riga (di solito il controvalore): <strong>verificalo</strong>.
+        Data d'acquisto: <input type="date" id="imp-date" value="${today}" style="padding:3px 6px;border:1px solid var(--border);border-radius:7px"> — usa quella reale se la conosci, rende corretti i rendimenti.
+      </div>
+      ${matches.map((m, i) => {
+        const already = heldBases.has(newsBaseSymbol(m.symbol));
+        return `
+        <div class="import-row">
+          <input type="checkbox" data-i="${i}" ${already ? "" : "checked"} ${already ? "disabled" : ""}>
+          <span class="ir-name"><strong>${m.name}</strong> · ${m.symbol}
+            <small>${already ? "già in portafoglio — salta" : escapeHtml(m.line)}</small></span>
+          <input type="number" min="0" step="any" data-amt="${i}" value="${m.amount != null ? Math.round(m.amount * 100) / 100 : ""}" placeholder="importo €">
+        </div>`;
+      }).join("")}
+      ${unmatched.length ? `<div class="import-unmatched"><strong>Righe non riconosciute</strong> (titoli fuori dall'universo o formati insoliti):<br>${unmatched.map(escapeHtml).join("<br>")}</div>` : ""}
+      <div class="import-actions">
+        <button type="button" class="primary" id="imp-add">Aggiungi al portafoglio</button>
+        <span id="imp-add-note" style="font-size:12px;color:var(--muted)"></span>
+      </div>`;
+
+    results.querySelector("#imp-add").addEventListener("click", async () => {
+      const btn = results.querySelector("#imp-add");
+      const note = results.querySelector("#imp-add-note");
+      const date = results.querySelector("#imp-date").value || today;
+      btn.disabled = true; note.textContent = "Verifico gli storici prezzi…";
+      let added = 0, skipped = [];
+      for (const box of results.querySelectorAll('input[type="checkbox"]:checked')) {
+        const m = matches[+box.dataset.i];
+        const amt = parseFloat(results.querySelector(`input[data-amt="${box.dataset.i}"]`).value);
+        if (!(amt > 0)) { skipped.push(m.symbol + " (importo mancante)"); continue; }
+        const hist = await getTickerHistory(m.symbol);
+        if (!hist.length) { skipped.push(m.symbol + " (storico non disponibile)"); continue; }
+        // clamp the date to the available history so returns stay computable
+        const useDate = date < hist[0][0] ? hist[0][0] : date;
+        portfolioState.holdings.push({ symbol: m.symbol, name: m.name, exchange: m.exchange,
+                                       investedAmount: amt, purchaseDate: useDate });
+        added++;
+      }
+      persistPortfolio();
+      close();
+      if (appCard) render(appCard);
+      switchView("dashboard");
+      if (skipped.length) console.warn("Import: saltati", skipped);
+      // a lightweight confirmation the user sees on the freshly rendered Home
+      if (added) {
+        const perf = document.getElementById("pf-perf");
+        if (perf) {
+          const okNote = document.createElement("div");
+          okNote.className = "private-note";
+          okNote.style.color = "var(--support)";
+          okNote.textContent = `✓ Importate ${added} posizioni${skipped.length ? ` — saltate: ${skipped.join(", ")}` : ""}.`;
+          perf.parentNode.insertBefore(okNote, perf);
+        }
+      }
+    });
+  }
+}
+
 function render(card) {
+  document.body.classList.remove("no-sidebar");  // signed in: show the app chrome
+  updateSidebarUser();
   const content = document.getElementById("content");
   content.innerHTML = "";
   // Refresh lives inside the portfolio section ("↻ Aggiorna prezzi").
   content.appendChild(buildPrivateSection());
   renderAnalysisTab(card);  // computes chatContext used by the chat tab
-  const chatEl = document.getElementById("chat-content");
-  chatEl.innerHTML = "";
-  chatEl.appendChild(buildChatCard());
+  renderChatTab();
+  renderProfileTab();
+}
+
+// ── "Profilo" sidebar section: current profile summary + the same
+// questionnaire, embedded and editable in place ──
+function renderProfileTab() {
+  const el = document.getElementById("profile-content");
+  el.innerHTML = "";
+  if (!userProfile) {
+    el.innerHTML = `<div class="chart-card"><div class="private-note">Compila il questionario del profilo per personalizzare notizie e contenuti.</div></div>`;
+    return;
+  }
+  const p = userProfile;
+  const pct = Math.round((p.score - p.min) / (p.max - p.min) * 100);
+  const summary = document.createElement("div");
+  summary.className = "profile-summary";
+  summary.innerHTML = `
+    <h2>👤 Il tuo profilo da investitore</h2>
+    <div class="private-note" style="margin:0">Determina quali notizie e contenuti vengono messi in evidenza. Non genera consigli di investimento.</div>
+    <div class="ps-label">${p.label}</div>
+    <div class="ps-bar"><div style="width:${pct}%"></div></div>
+    <div class="ps-scale"><span>Conservativo</span><span>Moderato</span><span>Dinamico</span></div>
+    <div class="ps-desc">${p.desc}<br><span style="color:var(--muted);font-size:12px">Punteggio ${p.score} su ${p.max} — modifica le risposte qui sotto per aggiornarlo.</span></div>`;
+  el.appendChild(summary);
+  renderProfileScreen("edit", (saved) => {
+    // repaint everything that depends on the profile (news ranking, badge)
+    if (saved) render(appCard);
+    else renderProfileTab();
+  }, el);
 }
 
 let appCard = null;  // last-loaded market-data card, so we can re-render on login/logout
@@ -1367,15 +1829,18 @@ async function renderGated() {
   if (!appCard) return;
   if (authConfigured() && !currentUser) {
     _profileScreenActive = false;
+    _renderedForUid = null;
     renderLoginScreen();
     return;
   }
-  // A profile form (onboarding or edit) is already open. Supabase re-fires
-  // auth events in the background (token refresh, tab visibility), each of
-  // which calls renderGated — without this guard those spurious re-fires
-  // would rebuild the form and wipe the answers the user is entering,
-  // making it impossible to finish. Sign-out is handled above, before here.
+  // Supabase re-fires auth events in the background (token refresh, tab
+  // visibility); each calls renderGated. Two guards keep those spurious
+  // re-fires from wiping in-progress user input (onboarding answers, the
+  // embedded Profilo form, half-typed chat): skip while onboarding is
+  // open, and skip when the app is already rendered for this same user.
   if (_profileScreenActive) return;
+  const uid = currentUser ? currentUser.id : "anon";
+  if (uid === _renderedForUid) return;
 
   if (authConfigured() && currentUser && userProfile === null) {
     // Cloud is the source of truth when reachable; if the profiles table
@@ -1391,6 +1856,7 @@ async function renderGated() {
     userProfile = computeRiskProfile(answers);
   }
   await loadPortfolioState();
+  _renderedForUid = uid;
   render(appCard);
 }
 
@@ -1664,8 +2130,35 @@ function staticRegressionFromCard(card) {
 // per-asset regressions, macro readings). Plain-language, grounded in the
 // numbers, deliberately "describes, does not advise". A future version can
 // swap this for a real LLM behind a Supabase Edge Function.
-let chatMessages = [];   // {role: "user"|"bot", text} — persists across tab re-renders
 let chatContext = null;  // refreshed by renderAnalysisTab
+
+// ── chat sessions (LLM-style history) ──
+// Multiple conversations, persisted per-user in localStorage. The answer
+// engine is rule-based today; the session structure is already the one a
+// generative backend would use (ordered {role, text} messages), so
+// swapping the engine later won't touch the UI or the storage.
+let chatSessions = [];    // [{id, title, ts, messages: [{role: "user"|"bot", text}]}]
+let chatCurrentId = null;
+
+function _chatStorageKey() { return "chatSessions:" + (currentUser ? currentUser.id : "anon"); }
+function loadChatSessions() {
+  try { chatSessions = JSON.parse(localStorage.getItem(_chatStorageKey()) || "[]"); }
+  catch (e) { chatSessions = []; }
+  if (!Array.isArray(chatSessions)) chatSessions = [];
+  chatCurrentId = chatSessions.length ? chatSessions[0].id : null;
+}
+function saveChatSessions() {
+  try { localStorage.setItem(_chatStorageKey(), JSON.stringify(chatSessions.slice(0, 30))); } catch (e) { /* quota */ }
+}
+function newChatSession() {
+  const s = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+              title: "Nuova conversazione", ts: Date.now(), messages: [] };
+  chatSessions.unshift(s);
+  chatCurrentId = s.id;
+  saveChatSessions();
+  return s;
+}
+function currentChatSession() { return chatSessions.find(s => s.id === chatCurrentId) || null; }
 
 const CHAT_GLOSSARY = {
   "vix": "Il VIX è l'\"indice della paura\": misura quanta volatilità il mercato si aspetta sull'azionario USA. Basso = clima calmo; alto = tensione.",
@@ -1836,42 +2329,89 @@ function chatAnswer(qRaw, ctx) {
   return "Non sono sicuro di aver capito 🤔. Prova con: \"come va il mio portafoglio?\", \"cosa muove i miei titoli?\", \"com'è il VIX?\", \"cos'è il MOVE?\", oppure scrivi \"aiuto\".";
 }
 
-function renderChatThread(threadEl) {
-  threadEl.innerHTML = chatMessages.map(m => `<div class="chat-msg ${m.role}">${m.text}</div>`).join("");
-  threadEl.scrollTop = threadEl.scrollHeight;
-}
+// The Chat section: LLM-style layout — session list on the left ("+
+// Nuova chat", history, delete), conversation thread on the right. The
+// engine is rule-based (chatAnswer); the UI and storage are already
+// generative-ready.
+function renderChatTab() {
+  loadChatSessions();
+  const container = document.getElementById("chat-content");
+  container.innerHTML = "";
 
-function buildChatCard() {
-  const card = document.createElement("div");
-  card.className = "chart-card";
-  const suggestions = ["Come va il mio portafoglio?", "Quanto posso perdere in una giornata nera?", "Come posso diversificare?", "Che notizie ci sono per me?", "Com'è il trend dei miei titoli?", "Cosa muove i miei titoli?", "Sono troppo concentrato?"];
-  card.innerHTML = `
-    <h2>💬 Chiedi alla piattaforma</h2>
-    <div class="private-note" style="margin-bottom:0">Fai una domanda sul tuo portafoglio o sui dati — le risposte sono basate sui tuoi numeri. Versione beta (senza AI generativa, ancora).</div>
-    <div class="chat-suggestions">${suggestions.map(s => `<button type="button" class="chat-chip">${s}</button>`).join("")}</div>
-    <div class="chat-thread" id="chat-thread"></div>
-    <div class="chat-input-row">
-      <input id="chat-input" type="text" autocomplete="off" placeholder="Scrivi una domanda…">
-      <button type="button" id="chat-send">Invia</button>
-    </div>
-  `;
-  const thread = card.querySelector("#chat-thread");
-  const input = card.querySelector("#chat-input");
-  renderChatThread(thread);
+  const shell = document.createElement("div");
+  shell.className = "chat-shell";
+  shell.innerHTML = `
+    <div class="chat-side" id="chat-side"></div>
+    <div class="chat-main">
+      <div class="chart-card">
+        <h2>💬 Assistente</h2>
+        <div class="private-note" style="margin-bottom:0">Risposte basate sui numeri del tuo portafoglio e sui modelli della piattaforma. Motore a regole (l'AI generativa arriverà) — a scopo informativo, non è consulenza.</div>
+        <div class="chat-suggestions" id="chat-sugg"></div>
+        <div class="chat-thread" id="chat-thread"></div>
+        <div class="chat-input-row">
+          <input id="chat-input" type="text" autocomplete="off" placeholder="Scrivi una domanda…">
+          <button type="button" id="chat-send">Invia</button>
+        </div>
+      </div>
+    </div>`;
+  container.appendChild(shell);
+
+  const side = shell.querySelector("#chat-side");
+  const thread = shell.querySelector("#chat-thread");
+  const input = shell.querySelector("#chat-input");
+  const suggEl = shell.querySelector("#chat-sugg");
+  const suggestions = ["Come va il mio portafoglio?", "Quanto posso perdere in una giornata nera?", "Come posso diversificare?", "Che notizie ci sono per me?", "Com'è il trend dei miei titoli?", "Sono troppo concentrato?"];
+
+  function paintSide() {
+    side.innerHTML = `<button type="button" class="cs-new" id="cs-new">＋ Nuova chat</button>` +
+      chatSessions.map(s => `
+        <button type="button" class="cs-item ${s.id === chatCurrentId ? "active" : ""}" data-id="${s.id}">
+          <span class="cs-title">${escapeHtml(s.title)}</span>
+          <span class="cs-del" data-del="${s.id}" title="Elimina conversazione">✕</span>
+        </button>`).join("");
+    side.querySelector("#cs-new").addEventListener("click", () => {
+      newChatSession(); paintSide(); paintThread(); input.focus();
+    });
+    side.querySelectorAll(".cs-item").forEach(b => b.addEventListener("click", (ev) => {
+      const del = ev.target.getAttribute("data-del");
+      if (del) {
+        chatSessions = chatSessions.filter(s => s.id !== del);
+        if (chatCurrentId === del) chatCurrentId = chatSessions.length ? chatSessions[0].id : null;
+        saveChatSessions(); paintSide(); paintThread();
+        return;
+      }
+      chatCurrentId = b.dataset.id; paintSide(); paintThread();
+    }));
+  }
+
+  function paintThread() {
+    const s = currentChatSession();
+    const msgs = s ? s.messages : [];
+    const welcome = `<div class="chat-msg bot">Ciao! 👋 Sono l'assistente della piattaforma: posso leggerti il portafoglio, i modelli di rischio e le notizie. Prova una delle domande qui sopra, o scrivimi.</div>`;
+    thread.innerHTML = msgs.length ? msgs.map(m => `<div class="chat-msg ${m.role}">${m.text}</div>`).join("") : welcome;
+    thread.scrollTop = thread.scrollHeight;
+    suggEl.innerHTML = msgs.length ? "" : suggestions.map(t => `<button type="button" class="chat-chip">${t}</button>`).join("");
+    suggEl.querySelectorAll(".chat-chip").forEach(c => c.addEventListener("click", () => send(c.textContent)));
+  }
 
   function send(text) {
     text = (text || "").trim();
     if (!text) return;
-    chatMessages.push({ role: "user", text: escapeHtml(text) });
-    chatMessages.push({ role: "bot", text: chatAnswer(text, chatContext) });
-    renderChatThread(thread);
+    let s = currentChatSession();
+    if (!s) s = newChatSession();
+    if (!s.messages.length) s.title = text.length > 42 ? text.slice(0, 42) + "…" : text;
+    s.messages.push({ role: "user", text: escapeHtml(text) });
+    s.messages.push({ role: "bot", text: chatAnswer(text, chatContext) });
+    s.ts = Date.now();
+    saveChatSessions();
+    paintSide(); paintThread();
     input.value = "";
     input.focus();
   }
-  card.querySelector("#chat-send").addEventListener("click", () => send(input.value));
+  shell.querySelector("#chat-send").addEventListener("click", () => send(input.value));
   input.addEventListener("keydown", (e) => { if (e.key === "Enter") send(input.value); });
-  card.querySelectorAll(".chat-chip").forEach(c => c.addEventListener("click", () => send(c.textContent)));
-  return card;
+
+  paintSide(); paintThread();
 }
 
 // Header for one of the model sections in the Analysis tab. scoreText
@@ -2050,6 +2590,83 @@ function buildDiversificationCard(insights, div) {
   return el;
 }
 
+// ═══ The discursive "advisor" layer: the models translated into plain
+// prose for a non-technical reader, calibrated on the risk profile.
+// Informational only — it rephrases what the models measured, adds no
+// recommendation, and says so explicitly. Returns {full, compact} HTML
+// or null when there's not enough data to say anything honest.
+function buildAdvisorNarrative(ctx) {
+  const { holdings, quant, profile } = ctx;
+  const priced = (holdings || []).filter(h => h.priced);
+  if (!priced.length || !quant || !quant.met) return null;
+  const m = quant.met, g = quant.garch, v = quant.varres, t = quant.tsPort, d = quant.div;
+  const eur = (x) => "€" + Math.round(x).toLocaleString("it-IT");
+  const totMV = priced.reduce((s, h) => s + h.marketValue, 0);
+  const totInv = priced.reduce((s, h) => s + h.invested, 0);
+  const totPnl = (totMV / totInv - 1) * 100;
+  const best = priced.slice().sort((a, b) => b.pnl - a.pnl)[0];
+  const worst = priced.slice().sort((a, b) => a.pnl - b.pnl)[0];
+  const label = profile ? profile.label : null;
+
+  const paras = [];
+
+  // 1 — where you stand
+  let p1 = `Oggi il tuo portafoglio vale circa <strong>${eur(totMV)}</strong>: rispetto ai ${eur(totInv)} investiti sei ${totPnl >= 0 ? "in guadagno" : "in perdita"} del <strong>${totPnl >= 0 ? "+" : ""}${totPnl.toFixed(1)}%</strong>.`;
+  if (priced.length > 1 && best !== worst) {
+    p1 += ` A trainare è stato ${best.name} (${best.pnl >= 0 ? "+" : ""}${best.pnl.toFixed(0)}%), mentre ${worst.name} ${worst.pnl >= 0 ? `è cresciuto meno (+${worst.pnl.toFixed(0)}%)` : `è in rosso (${worst.pnl.toFixed(0)}%)`}.`;
+  }
+  paras.push(p1);
+
+  // 2 — return vs the risk paid for it
+  let sharpeWord = m.sharpe >= 1.5 ? "molto bene" : m.sharpe >= 1 ? "bene" : m.sharpe >= 0.5 ? "in modo accettabile" : "poco";
+  paras.push(`Il rendimento è stato del <strong>${m.annRet.toFixed(1)}% annuo</strong>, ottenuto però accettando oscillazioni ampie (volatilità ${m.annVol.toFixed(0)}% annua). In rapporto al rischio corso, il portafoglio ha reso <strong>${sharpeWord}</strong> (Sharpe ${m.sharpe.toFixed(2)}). Un dato da non dimenticare: nel momento peggiore di questo percorso avresti visto il valore scendere del <strong>${Math.abs(m.maxDD).toFixed(0)}%</strong> dal massimo — chi conosce questo numero in anticipo regge meglio le tempeste.`);
+
+  // 3 — risk right now, in euros
+  if (g && v) {
+    const regime = g.regimeRatio > 1.25 ? "più agitato del suo solito" : g.regimeRatio < 0.8 ? "più calmo del suo solito" : "nella sua normalità";
+    paras.push(`Quanto al rischio di <em>adesso</em>: il mercato del tuo portafoglio è in un periodo <strong>${regime}</strong> (i modelli di volatilità stimano ${g.condVolAnn.toFixed(0)}% contro una media storica del ${g.uncondVolAnn.toFixed(0)}%). In una giornata davvero negativa — ne capita statisticamente una su cento — la perdita storica è arrivata a <strong>${v.hist.var99.toFixed(1)}%</strong>, cioè circa <strong>${eur(totMV * v.hist.var99 / 100)}</strong> sul valore attuale. Non è un limite garantito: è la fotografia di quanto è successo finora.`);
+  }
+
+  // 4 — trend + structure
+  const bits = [];
+  if (t) {
+    bits.push(t.score >= 0.6 ? `il vento dei prezzi è a favore (trend ${t.label} su quasi tutti gli orizzonti)` :
+              t.score <= -0.6 ? `il vento dei prezzi è contrario (trend ${t.label})` :
+              `il trend dei prezzi è ${t.label}`);
+  }
+  if (d && d.effN != null) {
+    bits.push(d.hhi >= 0.5 ? `la struttura è molto concentrata: in pratica stai guidando con ≈ ${d.effN.toFixed(1)} titoli "effettivi", quindi le sorti dipendono da pochissimi nomi` :
+              d.hhi >= 0.3 ? `la diversificazione è parziale (≈ ${d.effN.toFixed(1)} titoli "effettivi")` :
+              `la diversificazione è ragionevole (≈ ${d.effN.toFixed(1)} titoli "effettivi")`);
+  }
+  if (bits.length) paras.push(`Guardando avanti: ${bits.join("; ")}. Nella sezione <strong>7 · Diversificazione</strong> trovi le osservazioni puntuali, numeri alla mano.`);
+
+  // 5 — profile-aware closing
+  if (label === "Conservativo") {
+    paras.push(`Dal tuo profilo (<strong>Conservativo</strong>) questo portafoglio chiede più tolleranza alle oscillazioni di quella che hai dichiarato: i numeri di rischio qui sopra sono la misura concreta di quel divario. Vale la pena rileggerli con calma${d && d.hhi >= 0.5 ? ", specie il punto sulla concentrazione" : ""}.`);
+  } else if (label === "Dinamico") {
+    paras.push(`Il tuo profilo (<strong>Dinamico</strong>) è coerente con un portafoglio che oscilla: la domanda giusta non è "quanto può salire" ma "reggo il ${Math.abs(m.maxDD).toFixed(0)}% di calo visto in passato senza vendere nel momento peggiore?". Se la risposta è sì, i numeri sopra descrivono un rischio che ti sei scelto consapevolmente.`);
+  } else if (label) {
+    paras.push(`Rispetto al tuo profilo (<strong>Moderato</strong>), tieni d'occhio l'equilibrio tra la crescita ottenuta e le oscillazioni accettate: i numeri qui sopra ti dicono esattamente dove sta oggi quell'equilibrio.`);
+  }
+
+  const disclaimer = `Questa lettura riformula in parole i risultati dei modelli qui sotto — è informazione, non un consiglio: non conosco la tua situazione fiscale, le tue scadenze né i tuoi obiettivi, e non sostituisce un consulente abilitato.`;
+
+  const full = `
+    <h2>🧭 In parole semplici — la lettura del tuo portafoglio</h2>
+    <div class="adv-sub">Generata dai modelli della piattaforma${label ? `, calibrata sul tuo profilo <strong>${label}</strong>` : ""}.</div>
+    ${paras.map(p => `<p>${p}</p>`).join("")}
+    <div class="adv-disclaimer">${disclaimer}</div>`;
+
+  const compact = `
+    <h2>🧭 In breve</h2>
+    <div class="adv-sub"></div>
+    <p>${p1} ${g && v ? `In una giornata davvero negativa (1 su 100) la perdita storica arriva a circa <strong>${eur(totMV * v.hist.var99 / 100)}</strong>.` : ""} La lettura completa è nella sezione <strong>Analisi</strong>.</p>
+    <div class="adv-disclaimer">Informazione basata sui tuoi dati, non consulenza personalizzata.</div>`;
+
+  return { full, compact };
+}
+
 // Card for Section 4 ("News rilevanti") of the Analysis tab: broader than
 // the portfolio-tab "Top 3", ranked by sector exposure (derived from the
 // held tickers) and by the user's investor profile.
@@ -2179,6 +2796,18 @@ async function renderAnalysisTab(card) {
   const quant = { met, garch, varres, tsPort, tsmomByAsset, div: divStats };
 
   chatContext = { card, holdings: chatHoldings, factorsPos: [...cPos], factorsNeg: [...cNeg], regressionByAsset: regressionResults, technicals: techByAsset, quant };
+
+  // ── the discursive advisor layer: models → plain prose (full version
+  // at the top of Analysis, compact echo on Home) ──
+  const advisor = buildAdvisorNarrative({ holdings: chatHoldings, quant, profile: userProfile });
+  if (advisor) {
+    const advCard = document.createElement("div");
+    advCard.className = "advisor-card";
+    advCard.innerHTML = advisor.full;
+    el.appendChild(advCard);
+    const homeSlot = document.getElementById("pf-advisor");
+    if (homeSlot) homeSlot.innerHTML = `<div class="advisor-card">${advisor.compact}</div>`;
+  }
 
   // ── plain-language interpretation, prominent, right after the chart:
   // a cross-cutting executive summary before the detailed sections ──
@@ -2318,8 +2947,38 @@ function switchView(view) {
   document.getElementById("content").style.display = view === "dashboard" ? "block" : "none";
   document.getElementById("analysis-content").style.display = view === "analysis" ? "block" : "none";
   document.getElementById("chat-content").style.display = view === "chat" ? "block" : "none";
-  document.querySelectorAll(".view-tab-btn").forEach(b =>
+  document.getElementById("profile-content").style.display = view === "profile" ? "block" : "none";
+  document.querySelectorAll(".sb-item").forEach(b =>
     b.classList.toggle("active", b.dataset.view === view));
+  closeSidebar();  // mobile: navigating closes the off-canvas menu
+  window.scrollTo({ top: 0 });
+}
+
+// ── mobile sidebar (off-canvas) ──
+function closeSidebar() {
+  document.getElementById("sidebar").classList.remove("open");
+  document.getElementById("sb-backdrop").classList.remove("show");
+}
+document.getElementById("sb-toggle").addEventListener("click", () => {
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sb-backdrop").classList.toggle("show");
+});
+document.getElementById("sb-backdrop").addEventListener("click", closeSidebar);
+
+// Sidebar footer: signed-in user + profile shortcut + logout. Re-rendered
+// on every auth/profile change (called from renderGated / render).
+function updateSidebarUser() {
+  const el = document.getElementById("sb-user");
+  if (!el) return;
+  if (authConfigured() && currentUser) {
+    el.innerHTML = `
+      <div class="sb-email">${currentUser.email}</div>
+      ${userProfile ? `<div class="sb-profile-line">Profilo: <strong>${userProfile.label}</strong></div>` : ""}
+      <button type="button" id="sb-logout">Esci</button>`;
+    el.querySelector("#sb-logout").addEventListener("click", async () => { await authSignOut(); });
+  } else {
+    el.innerHTML = `<div class="sb-profile-line">Non hai effettuato l'accesso.</div>`;
+  }
 }
 
 async function load() {
@@ -2341,7 +3000,6 @@ async function load() {
     loading.style.display = "none";
     currentNav = card.meta.nav;
     appCard = card;
-    document.getElementById("view-tabs").style.display = "flex";
     loadNews(); loadTickerSectors();  // fire-and-forget: the news card and the chat both use them
 
     if (authConfigured()) {
@@ -2363,7 +3021,7 @@ async function load() {
     err.textContent = e.message;
   }
 }
-document.querySelectorAll(".view-tab-btn").forEach(b =>
+document.querySelectorAll(".sb-item").forEach(b =>
   b.addEventListener("click", () => switchView(b.dataset.view))
 );
 load();
