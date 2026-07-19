@@ -1567,22 +1567,35 @@ function _extractAmount(line) {
   return best;
 }
 
-// Match one document line to a security in the universe. Symbol match
-// (word boundary) wins; otherwise the first two significant name tokens
-// must all appear. Returns the FIRST universe entry that matches (US
-// listing first in the curated list), or null.
+// Lines that are bank-document furniture (headers, totals, account
+// info), never security rows. Skipped BEFORE matching — otherwise the
+// bank's own name in the header would be imported as a holding (a real
+// bug found in testing: "INTESA SANPAOLO - DOSSIER TITOLI N. 445566"
+// became ISP.MI for €445,566, the dossier number).
+const _IMPORT_SKIP_LINE = /\b(dossier|estratt\w*|situazion\w*|rendicont\w*|patrimoni\w*|intestat\w*|total\w*|sald\w*|aggiornat\w*|deposit\w*|iban|pagin\w*|pag\.|c\/c|conto\b)/i;
+
+// Match one document line to a security in the universe. Every entry is
+// scored — symbol hit (word boundary) is strongest, then how MANY of the
+// entry's significant name tokens appear — and the best score wins.
+// First-two-tokens-present remains the minimum bar. Scoring matters for
+// families of similar names: "iShares Core MSCI World" and "iShares Core
+// MSCI EM IMI" share their first two tokens; the extra "world" hit is
+// what picks the right one (a real bug found in testing).
 function _matchUniverseLine(line) {
   const low = " " + line.toLowerCase() + " ";
+  const tokIn = (tok) => tok.length >= 5 ? low.includes(tok) : new RegExp("\\b" + tok + "\\b").test(low);
+  let best = null, bestScore = 0;
   for (const t of tickerList) {
+    let score = 0;
     const symBase = t.symbol.split(".")[0].toLowerCase();
-    if (symBase.length >= 3 && new RegExp("\\b" + symBase.replace(/[-]/g, "[-\\s]?") + "\\b", "i").test(line)) return t;
-    const toks = _significantTokens(t.name).slice(0, 2);
-    if (!toks.length) continue;
-    const allIn = toks.every(tok =>
-      tok.length >= 5 ? low.includes(tok) : new RegExp("\\b" + tok + "\\b").test(low));
-    if (allIn) return t;
+    if (symBase.length >= 3 && new RegExp("\\b" + symBase.replace(/[-]/g, "[-\\s]?") + "\\b", "i").test(line)) score += 10;
+    const toks = _significantTokens(t.name).slice(0, 4);
+    const hits = toks.filter(tokIn).length;
+    const firstTwoOk = toks.slice(0, 2).every(tokIn);
+    if (toks.length && firstTwoOk) score += hits;
+    if (score > bestScore) { bestScore = score; best = t; }
   }
-  return null;
+  return bestScore > 0 ? best : null;
 }
 
 // text → {matches: [{symbol,name,exchange,amount,line}], unmatched: [line], isins: [..]}
@@ -1591,12 +1604,14 @@ function parseImportText(text) {
   for (let raw of text.split(/\r?\n/)) {
     const line = raw.replace(/[;\t]+/g, "  ").trim();
     if (line.length < 3) continue;
+    if (_IMPORT_SKIP_LINE.test(line)) continue;  // headers/totals/account furniture
     (line.match(/\b[A-Z]{2}[A-Z0-9]{9}[0-9]\b/g) || []).forEach(i => isins.add(i));
     const hit = _matchUniverseLine(line);
     if (!hit) {
       // only keep plausible security rows in the unmatched report (has
-      // letters AND a number) — skips headers/footers noise
-      if (/[a-zA-Z]{4,}/.test(line) && /\d/.test(line)) unmatched.push(line.slice(0, 90));
+      // letters AND a number) — skips residual noise ({3,} so short names
+      // like "BTP" still show up as unrecognized instead of vanishing)
+      if (/[a-zA-Z]{3,}/.test(line) && /\d/.test(line)) unmatched.push(line.slice(0, 90));
       continue;
     }
     const key = hit.symbol.split(".")[0].split("-")[0];
