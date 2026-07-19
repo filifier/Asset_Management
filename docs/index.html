@@ -679,6 +679,19 @@
   }
   .import-actions .primary:disabled { opacity: 0.5; cursor: default; }
 
+  /* ═══ quick-nav pills between Analysis sections ═══ */
+  .quick-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; }
+  .qn-pill {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    color: var(--muted); background: var(--card); border: 1px solid var(--border);
+    border-radius: 999px; padding: 5px 12px 5px 6px; cursor: pointer; font-family: inherit;
+  }
+  .qn-pill:hover { color: var(--support); border-color: var(--support); background: var(--support-bg); }
+  .qn-pill .qn-num {
+    width: 18px; height: 18px; border-radius: 50%; background: var(--ink); color: #fff;
+    font-size: 10.5px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+
   /* ═══ advisor (discursive) card ═══ */
   .advisor-card {
     background: linear-gradient(135deg, #f4faf6 0%, #ffffff 55%);
@@ -2431,12 +2444,65 @@ function renderChatTab() {
 
 // Header for one of the model sections in the Analysis tab. scoreText
 // (optional) renders as a small chip on the right, e.g. "Score 62/100".
+// Each header carries id="sec-<num>" so the quick-nav pills can jump.
 function buildSectionHeader(num, title, subtitle, scoreText) {
   const el = document.createElement("div");
   el.className = "analysis-section";
+  el.id = "sec-" + num;
   el.innerHTML = `<span class="as-num">${num}</span>
     <span class="as-text"><h1>${title}</h1><div class="as-sub">${subtitle}</div><hr class="as-rule"></span>
     ${scoreText ? `<span class="as-score">${scoreText}</span>` : ""}`;
+  return el;
+}
+
+// Pills that jump to each model section — the "full workflow" nav of the
+// Analysis tab.
+function buildQuickNav(items) {
+  const el = document.createElement("div");
+  el.className = "quick-nav";
+  el.innerHTML = items.map(([num, label]) =>
+    `<button type="button" class="qn-pill" data-sec="${num}"><span class="qn-num">${num}</span>${label}</button>`).join("");
+  el.querySelectorAll(".qn-pill").forEach(b => b.addEventListener("click", () => {
+    const target = document.getElementById("sec-" + b.dataset.sec);
+    if (target) target.scrollIntoView({ block: "start" });  // instant: 'smooth' silently no-ops in some embedded browsers
+  }));
+  return el;
+}
+
+// ── per-asset risk/return efficiency table (Sharpe, Sortino, Calmar…) ──
+// Metrics are computed on each asset's FULL available price history (not
+// just the holding period), so they describe the instrument's behavior;
+// the portfolio row uses the weighted portfolio series.
+function buildRiskReturnCard(perAsset, met) {
+  const el = document.createElement("div");
+  el.className = "chart-card";
+  const rows = [];
+  if (met) rows.push({ name: "<strong>Portafoglio (pesato)</strong>", m: met });
+  for (const a of perAsset) if (a.m) rows.push({ name: a.name, m: a.m });
+  if (!rows.length) {
+    el.innerHTML = `<h2>Rendimento / rischio per asset</h2><div class="private-note">Aggiungi titoli con almeno ~40 giorni di storico.</div>`;
+    return el;
+  }
+  const fmt = (x, d = 2) => x == null ? "—" : x.toFixed(d);
+  const shCls = (s) => s == null ? "" : s >= 1 ? "sig-pos" : s < 0.3 ? "sig-neg" : "";
+  el.innerHTML = `
+    <h2>Rendimento / rischio — quanto ogni asset ripaga il rischio che porta</h2>
+    <div class="private-note">Le tre "ratio" leggono lo stesso rapporto da angoli diversi: <strong>Sharpe</strong> = extra-rendimento per unità di oscillazione totale; <strong>Sortino</strong> = come Sharpe ma conta solo le oscillazioni al ribasso (quelle che fanno male); <strong>Calmar</strong> = rendimento annuo rispetto alla peggior caduta. Sopra 1 è buono, sopra 2 è raro. Calcolate sull'intero storico disponibile di ogni strumento (10 anni dove possibile), non solo dal tuo acquisto.</div>
+    <div class="reg-table-wrap"><table class="reg-table">
+      <thead><tr><th>Serie</th><th>CAGR</th><th>Vol. annua</th><th>Sharpe</th><th>Sortino</th><th>Calmar</th><th>Max drawdown</th></tr></thead>
+      <tbody>
+        ${rows.map(r => `<tr class="${shCls(r.m.sharpe)}">
+          <td class="factor-name">${r.name}</td>
+          <td class="num">${fmt(r.m.annRet, 1)}%</td>
+          <td class="num">${fmt(r.m.annVol, 1)}%</td>
+          <td class="num"><strong>${fmt(r.m.sharpe)}</strong></td>
+          <td class="num">${fmt(r.m.sortino)}</td>
+          <td class="num">${fmt(r.m.calmar)}</td>
+          <td class="num">${fmt(r.m.maxDD, 1)}%</td>
+        </tr>`).join("")}
+      </tbody>
+    </table></div>
+    <div class="private-note" style="margin-top:8px">Righe evidenziate: verde = Sharpe ≥ 1 (il rischio è stato ben ripagato), rosso = Sharpe &lt; 0.3 (molto rischio per poco rendimento). Il rischio non "si vede" nei rendimenti finché non si materializza: per questo il max drawdown sta accanto al CAGR.</div>`;
   return el;
 }
 
@@ -2834,6 +2900,10 @@ async function renderAnalysisTab(card) {
   // ── quant scorecard: every model's score, efficiency vs risk ──
   el.appendChild(buildQuantScorecard(quant));
 
+  // ── quick navigation between the model sections ──
+  el.appendChild(buildQuickNav([[1, "OLS"], [2, "Carhart"], [3, "Tecnici"], [4, "GARCH"],
+    [5, "VaR"], [6, "TSMOM"], [7, "Diversificazione"], [8, "Rendimento/Rischio"], [9, "News"]]));
+
   // ═══ SECTION 1 — Regressione OLS: sensibilità di ogni titolo ai fattori macro ═══
   el.appendChild(buildSectionHeader(1, "Regressione OLS", "Quanto ogni titolo si è storicamente mosso insieme a tassi, VIX, oro, petrolio e dollaro."));
   if (regressionResults.length) {
@@ -2945,8 +3015,21 @@ async function renderAnalysisTab(card) {
     el.appendChild(c);
   }
 
-  // ═══ SECTION 8 — News rilevanti: settori del portafoglio + profilo utente ═══
-  el.appendChild(buildSectionHeader(8, "News rilevanti", "Notizie selezionate incrociando i settori del tuo portafoglio e il tuo profilo da investitore."));
+  // ═══ SECTION 8 — Rendimento/rischio per asset (Sharpe, Sortino, Calmar) ═══
+  el.appendChild(buildSectionHeader(8, "Rendimento / rischio per asset",
+    "Le ratio che i gestori usano per giudicare se un rendimento vale il rischio corso: Sharpe, Sortino e Calmar, per ogni strumento e per il portafoglio.",
+    met ? `Sharpe ${met.sharpe.toFixed(2)}` : null));
+  const perAssetMetrics = picked.map(a => {
+    const closes = a.history.map(h => h[1]).filter(v => v > 0);
+    const arets = [];
+    for (let i = 1; i < closes.length; i++) arets.push((closes[i] - closes[i - 1]) / closes[i - 1] * 100);
+    return { name: a.label, m: arets.length >= 40 ? perfMetrics(arets, rfDaily) : null };
+  });
+  el.appendChild(buildRiskReturnCard(perAssetMetrics, met));
+  chatContext.perAssetMetrics = perAssetMetrics;
+
+  // ═══ SECTION 9 — News rilevanti: settori del portafoglio + profilo utente ═══
+  el.appendChild(buildSectionHeader(9, "News rilevanti", "Notizie selezionate incrociando i settori del tuo portafoglio e il tuo profilo da investitore."));
   if (!authConfigured() || userProfile) {
     const picks = newsRelevantForProfile(newsForSection.items || [], portfolioState.holdings, userProfile);
     el.appendChild(buildRelevantNewsCard(picks, userProfile));

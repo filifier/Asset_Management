@@ -9,3 +9,4 @@ data/scorecard.json
 __pycache__/
 *.pyc
 quant_double_check.xlsx
+model_validation_report.md

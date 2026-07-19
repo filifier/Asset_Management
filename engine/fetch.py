@@ -44,7 +44,12 @@ FF_MOM_URL = ("https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/"
 # fetched from this same date so they're comparable on equal footing —
 # not just "same number of days back", but the same actual calendar
 # window.
-HISTORY_START_DATE = "2021-01-01"
+# 10 years of daily history: enough to cover multiple volatility regimes
+# (2018 vol spike, 2020 COVID crash, 2022 rate shock) — what GARCH/VaR
+# validation and factor-stability tests actually need. Was 2021-01-01;
+# extended after the model-validation work showed ~5y was the binding
+# statistical constraint.
+HISTORY_START_DATE = "2016-01-01"
 
 # Matches entries like:
 #   {x:Date.UTC(2026,6,8),y:Number((18.66).toFixed(2)),formattedX: "08-Jul-2026"}
